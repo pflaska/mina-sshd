@@ -237,7 +237,7 @@ public enum BuiltinSignatures implements SignatureFactory {
 
         @Override
         public boolean isSupported() {
-            return SecurityUtils.isEDDSACurveSupported();
+            return SecurityUtils.isEdEcJdkAvailable() || SecurityUtils.isEDDSACurveSupported();
         }
     },
     ed25519_cert(KeyPairProvider.SSH_ED25519_CERT) {
