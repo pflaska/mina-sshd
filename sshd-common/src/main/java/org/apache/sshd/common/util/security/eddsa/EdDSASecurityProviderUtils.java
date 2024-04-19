@@ -36,8 +36,6 @@ import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable;
 import net.i2p.crypto.eddsa.spec.EdDSAParameterSpec;
 import net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec;
 import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec;
-import org.apache.sshd.common.config.keys.PrivateKeyEntryDecoder;
-import org.apache.sshd.common.config.keys.PublicKeyEntryDecoder;
 import org.apache.sshd.common.util.ValidateUtils;
 import org.apache.sshd.common.util.buffer.Buffer;
 import org.apache.sshd.common.util.security.SecurityUtils;
@@ -53,14 +51,6 @@ public final class EdDSASecurityProviderUtils {
 
     private EdDSASecurityProviderUtils() {
         throw new UnsupportedOperationException("No instance");
-    }
-
-    public static Class<? extends PublicKey> getEDDSAPublicKeyType() {
-        return EdDSAPublicKey.class;
-    }
-
-    public static Class<? extends PrivateKey> getEDDSAPrivateKeyType() {
-        return EdDSAPrivateKey.class;
     }
 
     public static boolean isEDDSAKey(Key key) {
@@ -119,16 +109,6 @@ public final class EdDSASecurityProviderUtils {
         return SecurityUtils.EDDSA.equalsIgnoreCase(algorithm);
     }
 
-    public static PublicKeyEntryDecoder<? extends PublicKey, ? extends PrivateKey> getEDDSAPublicKeyEntryDecoder() {
-        ValidateUtils.checkTrue(SecurityUtils.isEDDSACurveSupported(), SecurityUtils.EDDSA + " not supported");
-        return Ed25519PublicKeyDecoder.INSTANCE;
-    }
-
-    public static PrivateKeyEntryDecoder<? extends PublicKey, ? extends PrivateKey> getOpenSSHEDDSAPrivateKeyEntryDecoder() {
-        ValidateUtils.checkTrue(SecurityUtils.isEDDSACurveSupported(), SecurityUtils.EDDSA + " not supported");
-        return OpenSSHEd25519PrivateKeyEntryDecoder.INSTANCE;
-    }
-
     public static boolean compareEDDSAPrivateKeys(PrivateKey k1, PrivateKey k2) {
         if (!SecurityUtils.isEDDSACurveSupported()) {
             return false;
@@ -180,15 +160,6 @@ public final class EdDSASecurityProviderUtils {
         EdDSAPrivateKeySpec keySpec = new EdDSAPrivateKeySpec(seed, params);
         KeyFactory factory = SecurityUtils.getKeyFactory(SecurityUtils.EDDSA);
         return factory.generatePrivate(keySpec);
-    }
-
-    public static <B extends Buffer> B putRawEDDSAPublicKey(B buffer, PublicKey key) {
-        ValidateUtils.checkTrue(SecurityUtils.isEDDSACurveSupported(), SecurityUtils.EDDSA + " not supported");
-        EdDSAPublicKey edKey = ValidateUtils.checkInstanceOf(key, EdDSAPublicKey.class, "Not an EDDSA public key: %s", key);
-        byte[] seed = Ed25519PublicKeyDecoder.getSeedValue(edKey);
-        ValidateUtils.checkNotNull(seed, "No seed extracted from key: %s", edKey.getA());
-        buffer.putBytes(seed);
-        return buffer;
     }
 
     public static <B extends Buffer> B putEDDSAKeyPair(B buffer, PublicKey pubKey, PrivateKey prvKey) {
