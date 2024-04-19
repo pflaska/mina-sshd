@@ -1,0 +1,1 @@
+org.apache.sshd.keyprovider.jdk.ed25519.EdECBuiltinSecurityProvider
