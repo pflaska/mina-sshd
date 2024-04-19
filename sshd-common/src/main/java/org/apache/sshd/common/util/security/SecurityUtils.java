@@ -32,7 +32,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
+import java.security.Provider.Service;
 import java.security.PublicKey;
+import java.security.Security;
 import java.security.Signature;
 import java.security.cert.CertificateFactory;
 import java.util.Arrays;
@@ -59,6 +61,7 @@ import javax.crypto.spec.DHParameterSpec;
 import org.apache.sshd.common.NamedResource;
 import org.apache.sshd.common.PropertyResolverUtils;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
+import org.apache.sshd.common.config.keys.KeyTypeSupport;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.config.keys.PrivateKeyEntryDecoder;
 import org.apache.sshd.common.config.keys.PublicKeyEntryDecoder;
@@ -281,7 +284,7 @@ public final class SecurityUtils {
                 try {
                     getKeyPairGenerator(KeyUtils.EC_ALGORITHM);
                     hasEcc = Boolean.TRUE;
-                } catch (Throwable t) {
+                } catch (GeneralSecurityException t) {
                     hasEcc = Boolean.FALSE;
                 }
             } else {
@@ -615,29 +618,34 @@ public final class SecurityUtils {
         return (r != null) && r.isEnabled() && r.isSupported();
     }
 
+    public static boolean isEdEcJdkAvailable() {
+        Service ed25519factory = Security.getProvider("SunEC").getService("KeyFactory", "Ed25519");
+        return ed25519factory != null;
+    }
+
     /* -------------------------------------------------------------------- */
 
     public static PublicKeyEntryDecoder<? extends PublicKey, ? extends PrivateKey> getEDDSAPublicKeyEntryDecoder() {
-        if (!isEDDSACurveSupported()) {
-            throw new UnsupportedOperationException(EDDSA + " provider N/A");
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return gen.getPublicKeyEntryDecoder();
         }
-
-        return EdDSASecurityProviderUtils.getEDDSAPublicKeyEntryDecoder();
+        throw new UnsupportedOperationException(EDDSA + " provider N/A");
     }
 
     public static PrivateKeyEntryDecoder<? extends PublicKey, ? extends PrivateKey> getOpenSSHEDDSAPrivateKeyEntryDecoder() {
-        if (!isEDDSACurveSupported()) {
-            throw new UnsupportedOperationException(EDDSA + " provider N/A");
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return gen.getPrivateKeyEntryDecoder();
         }
-
-        return EdDSASecurityProviderUtils.getOpenSSHEDDSAPrivateKeyEntryDecoder();
+        throw new UnsupportedOperationException(EDDSA + " provider N/A");
     }
 
     public static org.apache.sshd.common.signature.Signature getEDDSASigner() {
-        if (isEDDSACurveSupported()) {
-            return EdDSASecurityProviderUtils.getEDDSASignature();
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return gen.getSignature();
         }
-
         throw new UnsupportedOperationException(EDDSA + " Signer not available");
     }
 
@@ -646,14 +654,20 @@ public final class SecurityUtils {
     }
 
     public static Class<? extends PublicKey> getEDDSAPublicKeyType() {
-        return isEDDSACurveSupported() ? EdDSASecurityProviderUtils.getEDDSAPublicKeyType() : PublicKey.class;
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        return gen != null ? gen.getEDDSAPublicKeyType() : PublicKey.class;
     }
 
     public static Class<? extends PrivateKey> getEDDSAPrivateKeyType() {
-        return isEDDSACurveSupported() ? EdDSASecurityProviderUtils.getEDDSAPrivateKeyType() : PrivateKey.class;
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        return gen != null ? gen.getEDDSAPrivateKeyType() : PrivateKey.class;
     }
 
     public static boolean compareEDDSAPPublicKeys(PublicKey k1, PublicKey k2) {
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return Objects.equals(k1, k2);
+        }
         return isEDDSACurveSupported() ? EdDSASecurityProviderUtils.compareEDDSAPPublicKeys(k1, k2) : false;
     }
 
@@ -673,20 +687,19 @@ public final class SecurityUtils {
         if (!KeyPairProvider.SSH_ED25519.equals(keyType)) {
             throw new InvalidKeyException("Unsupported key type: " + keyType);
         }
-
-        if (!isEDDSACurveSupported()) {
-            throw new NoSuchAlgorithmException(EDDSA + " provider not supported");
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return gen.generatePublicKey(seed);
         }
-
-        return EdDSASecurityProviderUtils.generateEDDSAPublicKey(seed);
+        throw new NoSuchAlgorithmException(EDDSA + " provider not supported");
     }
 
     public static <B extends Buffer> B putRawEDDSAPublicKey(B buffer, PublicKey key) {
-        if (!isEDDSACurveSupported()) {
-            throw new UnsupportedOperationException(EDDSA + " provider not supported");
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return (B) gen.putRawPublicKey(buffer, key);
         }
-
-        return EdDSASecurityProviderUtils.putRawEDDSAPublicKey(buffer, key);
+        throw new UnsupportedOperationException(EDDSA + " provider not supported");
     }
 
     public static <B extends Buffer> B putEDDSAKeyPair(B buffer, KeyPair kp) {
