@@ -101,7 +101,9 @@ public class Ed25519JavaProvider implements KeyTypeSupport {
 
     @Override
     public Signature getSignature() {
-        return EdDSASecurityProviderUtils.getEDDSASignature();
+        Signature s = EdDSASecurityProviderUtils.getEDDSASignature();
+        System.out.println("Signature: " + s);
+        return s;
     }
 
     @Override
