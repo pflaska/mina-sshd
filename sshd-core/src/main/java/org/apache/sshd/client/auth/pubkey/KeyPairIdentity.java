@@ -82,6 +82,8 @@ public class KeyPairIdentity implements PublicKeyIdentity, SignatureFactoriesHol
         verifier.update(session, data);
 
         byte[] signature = verifier.sign(session);
+        //        System.out.println(bytesToHex(signature));
+        //        System.out.println(HexFormat.ofDelimiter(" ").formatHex(signature));
         return new SimpleImmutableEntry<>(factory.getName(), signature);
     }
 
