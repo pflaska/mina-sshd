@@ -43,11 +43,23 @@ import org.apache.sshd.common.util.security.SecurityUtils;
  * @author <a href="mailto:dev@mina.apache.org">Apache MINA SSHD Project</a>
  */
 public abstract class AbstractSignature implements Signature {
+    private static final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
+
     private java.security.Signature signatureInstance;
     private final String algorithm;
 
     protected AbstractSignature(String algorithm) {
         this.algorithm = ValidateUtils.checkNotNullAndNotEmpty(algorithm, "No signature algorithm specified");
+    }
+
+    public static String bytesToHex(byte[] bytes) {
+        char[] hexChars = new char[bytes.length * 2];
+        for (int j = 0; j < bytes.length; j++) {
+            int v = bytes[j] & 0xFF;
+            hexChars[j * 2] = HEX_ARRAY[v >>> 4];
+            hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
+        }
+        return new String(hexChars);
     }
 
     @Override
@@ -85,7 +97,9 @@ public abstract class AbstractSignature implements Signature {
     @Override
     public byte[] sign(SessionContext session) throws Exception {
         java.security.Signature signature = Objects.requireNonNull(getSignature(), "Signature not initialized");
-        return signature.sign();
+        byte[] sig = signature.sign();
+        System.out.println("Signature: " + bytesToHex(sig));
+        return sig;
     }
 
     @Override
