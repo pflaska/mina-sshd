@@ -95,34 +95,8 @@ public final class Ed25519BuiltinPublicKeyDecoder extends AbstractPublicKeyEntry
         byte[] seed = KeyEntryResolver.readRLEBytes(keyData, 200);
 
         EdECPublicKeySpec keySpec = new EdECPublicKeySpec(
-                NamedParameterSpec.ED25519, byteArrayToEdPoint(seed));
+                NamedParameterSpec.ED25519, EdECBuiltinSecurityProvider.decodeToEdECPoint(seed));
         return (EdECPublicKey) KeyFactory.getInstance("ED25519", "SunEC").generatePublic(keySpec);
-    }
-
-    private static void swap(byte[] arr, int i, int j) {
-        byte tmp = arr[i];
-        arr[i] = arr[j];
-        arr[j] = tmp;
-    }
-
-    private static void reverse(byte[] arr) {
-        int i = 0;
-        int j = arr.length - 1;
-
-        while (i < j) {
-            swap(arr, i, j);
-            i++;
-            j--;
-        }
-    }
-
-    private static EdECPoint byteArrayToEdPoint(byte[] arr) {
-        byte msb = arr[arr.length - 1];
-        boolean xOdd = (msb & 0x80) != 0;
-        arr[arr.length - 1] &= (byte) 0x7F;
-        reverse(arr);
-        BigInteger y = new BigInteger(1, arr);
-        return new EdECPoint(xOdd, y);
     }
 
     public static byte[] getSeedValue(EdECPublicKey key) {
