@@ -61,6 +61,7 @@ import org.apache.sshd.common.SshException;
 import org.apache.sshd.common.cipher.ECCurves;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.config.keys.OpenSshCertificate;
+import org.apache.sshd.common.config.keys.UnsupportedSshPublicKey;
 import org.apache.sshd.common.config.keys.u2f.SecurityKeyPublicKey;
 import org.apache.sshd.common.keyprovider.KeyPairProvider;
 import org.apache.sshd.common.util.GenericUtils;
@@ -117,6 +118,11 @@ public abstract class Buffer implements Readable {
      * @return The bytes consumed so far
      */
     public abstract byte[] getBytesConsumed();
+
+    /**
+     * @return The bytes consumed since the given position
+     */
+    public abstract byte[] getBytesConsumed(int from);
 
     /**
      * @param  pos A position in the <U>raw</U> underlying data bytes
@@ -537,11 +543,14 @@ public abstract class Buffer implements Readable {
     public PublicKey getPublicKey(BufferPublicKeyParser<? extends PublicKey> parser) throws SshException {
         int ow = wpos();
         int len = ensureAvailable(getInt());
-        wpos(rpos() + len);
+        int afterKey = rpos() + len;
+        wpos(afterKey);
         try {
             return getRawPublicKey(parser);
         } finally {
             wpos(ow);
+            // Skip this key, even if the parser failed.
+            rpos(afterKey);
         }
     }
 
@@ -1007,7 +1016,9 @@ public abstract class Buffer implements Readable {
 
     public void putRawPublicKeyBytes(PublicKey key) {
         Objects.requireNonNull(key, "No key");
-        if (key instanceof RSAPublicKey) {
+        if (key instanceof UnsupportedSshPublicKey) {
+            putRawBytes(((UnsupportedSshPublicKey) key).getKeyData());
+        } else if (key instanceof RSAPublicKey) {
             RSAPublicKey rsaPub = (RSAPublicKey) key;
 
             putMPInt(rsaPub.getPublicExponent());
@@ -1031,7 +1042,7 @@ public abstract class Buffer implements Readable {
             byte[] ecPoint = ECCurves.encodeECPoint(ecKey.getW(), ecParams);
             putString(curve.getName());
             putBytes(ecPoint);
-        } else if (SecurityUtils.EDDSA.equals(key.getAlgorithm())) {
+        } else if (SecurityUtils.EDDSA.equals(key.getAlgorithm()) || SecurityUtils.ED25519.equals(key.getAlgorithm())) {
             SecurityUtils.putRawEDDSAPublicKey(this, key);
         } else if (key instanceof SecurityKeyPublicKey) {
             putRawPublicKeyBytes(((SecurityKeyPublicKey<?>) key).getDelegatePublicKey());

@@ -29,10 +29,28 @@ public class JceRandom extends AbstractRandom {
     public static final String NAME = "JCE";
 
     private byte[] tmp = new byte[16];
-    private final SecureRandom random = new SecureRandom();
+    private final SecureRandom random = getRandom();
 
     public JceRandom() {
         super();
+    }
+
+    private static SecureRandom getRandom() {
+        return new SecureRandom();
+    }
+
+    private static final class Cache {
+
+        static final SecureRandom INSTANCE = getRandom();
+
+        private Cache() {
+            // No instantiation
+            super();
+        }
+    }
+
+    public static SecureRandom getGlobalInstance() {
+        return Cache.INSTANCE;
     }
 
     @Override

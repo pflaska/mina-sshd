@@ -20,7 +20,9 @@ package org.apache.sshd.common.config.keys.u2f;
 
 import java.security.PublicKey;
 
-public interface SecurityKeyPublicKey<K extends PublicKey> extends PublicKey {
+import org.apache.sshd.common.config.keys.SshPublicKey;
+
+public interface SecurityKeyPublicKey<K extends PublicKey> extends SshPublicKey {
     String getAppName();
 
     boolean isNoTouchRequired();

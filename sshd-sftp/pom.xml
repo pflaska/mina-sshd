@@ -22,7 +22,7 @@
     <parent>
         <groupId>org.apache.sshd</groupId>
         <artifactId>sshd</artifactId>
-        <version>2.11.1-SNAPSHOT</version>
+        <version>2.14.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>sshd-sftp</artifactId>
@@ -40,12 +40,22 @@
             <artifactId>sshd-core</artifactId>
             <version>${project.version}</version>
         </dependency>
-            <!-- Test dependencies -->
+        <!-- Test dependencies -->
         <dependency>
             <groupId>org.apache.sshd</groupId>
             <artifactId>sshd-core</artifactId>
             <version>${project.version}</version>
             <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -56,18 +66,18 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.jcraft</groupId>
+            <groupId>com.github.mwiede</groupId>
             <artifactId>jsch</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.jcraft</groupId>
-            <artifactId>jzlib</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -79,13 +89,6 @@
 
     <dependencyManagement>
         <dependencies>
-                <!-- Referenced indirectly by testcontainers -->
-            <dependency>
-                <groupId>net.java.dev.jna</groupId>
-                <artifactId>jna</artifactId>
-                <version>5.8.0</version>
-            </dependency>
-        
             <dependency>
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
@@ -111,9 +114,11 @@
                 <configuration>
                     <redirectTestOutputToFile>true</redirectTestOutputToFile>
                     <reportsDirectory>${project.build.directory}/surefire-reports-nio2</reportsDirectory>
-                    <systemProperties>
+                    <systemPropertyVariables>
+                        <!-- Enable using deprecated ssh-rsa signature keys with JSch 0.2.x -->
+                        <jsch.server_host_key>ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa</jsch.server_host_key>
                         <org.apache.sshd.common.io.IoServiceFactoryFactory>org.apache.sshd.common.io.nio2.Nio2ServiceFactoryFactory</org.apache.sshd.common.io.IoServiceFactoryFactory>
-                    </systemProperties>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>
@@ -159,9 +164,9 @@
                                 <configuration>
                                     <redirectTestOutputToFile>true</redirectTestOutputToFile>
                                     <reportsDirectory>${project.build.directory}/surefire-reports-mina</reportsDirectory>
-                                    <systemProperties>
+                                    <systemPropertyVariables>
                                         <org.apache.sshd.common.io.IoServiceFactoryFactory>org.apache.sshd.mina.MinaServiceFactoryFactory</org.apache.sshd.common.io.IoServiceFactoryFactory>
-                                    </systemProperties>
+                                    </systemPropertyVariables>
                                 </configuration>
                             </execution>
                         </executions>
@@ -202,9 +207,9 @@
                                 <configuration>
                                     <redirectTestOutputToFile>true</redirectTestOutputToFile>
                                     <reportsDirectory>${project.build.directory}/surefire-reports-netty</reportsDirectory>
-                                    <systemProperties>
+                                    <systemPropertyVariables>
                                         <org.apache.sshd.common.io.IoServiceFactoryFactory>org.apache.sshd.netty.NettyIoServiceFactoryFactory</org.apache.sshd.common.io.IoServiceFactoryFactory>
-                                    </systemProperties>
+                                    </systemPropertyVariables>
                                 </configuration>
                             </execution>
                         </executions>

@@ -87,6 +87,11 @@ public class BaseBuilder<T extends AbstractFactoryManager, S extends BaseBuilder
      */
     public static final List<BuiltinDHFactories> DEFAULT_KEX_PREFERENCE = Collections.unmodifiableList(
             Arrays.asList(
+                    BuiltinDHFactories.sntrup761x25519,
+                    BuiltinDHFactories.sntrup761x25519_openssh,
+                    BuiltinDHFactories.mlkem768x25519,
+                    BuiltinDHFactories.mlkem1024nistp384,
+                    BuiltinDHFactories.mlkem768nistp256,
                     BuiltinDHFactories.curve25519,
                     BuiltinDHFactories.curve25519_libssh,
                     BuiltinDHFactories.curve448,
@@ -167,11 +172,11 @@ public class BaseBuilder<T extends AbstractFactoryManager, S extends BaseBuilder
         }
 
         if (cipherFactories == null) {
-            cipherFactories = setUpDefaultCiphers(false);
+            cipherFactories = setUpDefaultCiphers(true);
         }
 
         if (macFactories == null) {
-            macFactories = setUpDefaultMacs(false);
+            macFactories = setUpDefaultMacs(true);
         }
 
         if (fileSystemFactory == null) {

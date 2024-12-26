@@ -24,11 +24,15 @@ import java.util.Collections;
 
 import com.jcraft.jsch.JSch;
 import org.apache.sshd.client.SshClient;
+import org.apache.sshd.common.PropertyResolver;
+import org.apache.sshd.common.PropertyResolverUtils;
 import org.apache.sshd.common.util.OsUtils;
 import org.apache.sshd.git.GitLocationResolver;
+import org.apache.sshd.git.GitModuleProperties;
 import org.apache.sshd.git.transport.GitSshdSessionFactory;
 import org.apache.sshd.server.SshServer;
 import org.apache.sshd.server.auth.password.AcceptAllPasswordAuthenticator;
+import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 import org.apache.sshd.util.test.BaseTestSupport;
 import org.apache.sshd.util.test.CommonTestSupportUtils;
@@ -36,24 +40,30 @@ import org.apache.sshd.util.test.JSchLogger;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.transport.CredentialsProvider;
+import org.eclipse.jgit.transport.GitProtocolConstants;
+import org.eclipse.jgit.transport.ReceivePack;
 import org.eclipse.jgit.transport.SshSessionFactory;
+import org.eclipse.jgit.transport.UploadPack;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
-import org.junit.Assume;
-import org.junit.BeforeClass;
-import org.junit.FixMethodOrder;
-import org.junit.Test;
-import org.junit.runners.MethodSorters;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer.MethodName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  */
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+@TestMethodOrder(MethodName.class)
 public class GitPackCommandTest extends BaseTestSupport {
     public GitPackCommandTest() {
         super();
     }
 
-    @BeforeClass
-    public static void jschInit() {
+    @BeforeAll
+    static void jschInit() {
         JSchLogger.init();
     }
 
@@ -65,14 +75,16 @@ public class GitPackCommandTest extends BaseTestSupport {
     }
 
     @Test
-    public void testGitPack() throws Exception {
-        Assume.assumeFalse("On windows this activates TortoisePlink", OsUtils.isWin32());
+    void gitPack() throws Exception {
+        Assumptions.assumeFalse(OsUtils.isWin32(), "On windows this activates TortoisePlink");
 
         Path gitRootDir = getTempTargetRelativeFile(getClass().getSimpleName());
         try (SshServer sshd = setupTestServer()) {
+            GitPackTestConfig packConfig = new GitPackTestConfig();
             Path serverRootDir = gitRootDir.resolve("server");
             sshd.setSubsystemFactories(Collections.singletonList(new SftpSubsystemFactory()));
-            sshd.setCommandFactory(new GitPackCommandFactory(GitLocationResolver.constantPath(serverRootDir)));
+            sshd.setCommandFactory(new GitPackCommandFactory(GitLocationResolver.constantPath(serverRootDir))
+                    .withGitPackConfiguration(packConfig));
             sshd.start();
 
             int port = sshd.getPort();
@@ -95,27 +107,54 @@ public class GitPackCommandTest extends BaseTestSupport {
                                 + serverDir.getFileName())
                         .setDirectory(localDir.toFile())
                         .call()) {
-                    assertTrue("Client not started after clone", client.isStarted());
+                    assertTrue(client.isStarted(), "Client not started after clone");
                     git.commit().setMessage("First Commit").setCommitter(getCurrentTestName(), "sshd@apache.org").call();
                     git.push().call();
-                    assertTrue("Client not started after 1st push", client.isStarted());
+                    assertTrue(client.isStarted(), "Client not started after 1st push");
 
                     Path readmeFile = Files.createFile(localDir.resolve("readme.txt"));
                     git.add().addFilepattern(readmeFile.getFileName().toString()).call();
                     git.commit().setMessage(getCurrentTestName()).setCommitter(getCurrentTestName(), "sshd@apache.org").call();
                     git.push().call();
-                    assertTrue("Client not started after 2nd push", client.isStarted());
+                    assertTrue(client.isStarted(), "Client not started after 2nd push");
 
                     git.pull().setRebase(true).call();
-                    assertTrue("Client not started after rebase", client.isStarted());
+                    assertTrue(client.isStarted(), "Client not started after rebase");
+
+                    PropertyResolver useProtocolV2 = PropertyResolverUtils
+                            .toPropertyResolver(
+                                    Collections.singletonMap(GitModuleProperties.GIT_PROTOCOL_VERSION.getName(),
+                                            GitProtocolConstants.VERSION_2_REQUEST));
+                    client.setParentPropertyResolver(useProtocolV2);
+                    git.fetch().call();
+                    assertTrue(client.isStarted(),
+                            "Client not started after fetch using GIT_PROTOCOL='version=2' env. variable");
+
+                    assertTrue(packConfig.receivePackCalled, "ReceivePack was not configured");
+                    assertTrue(packConfig.uploadPackCalled, "UploadPack was not configured");
                 } finally {
                     client.stop();
                 }
 
-                assertFalse("Client not stopped after exit", client.isStarted());
+                assertFalse(client.isStarted(), "Client not stopped after exit");
             } finally {
                 sshd.stop();
             }
+        }
+    }
+
+    private static class GitPackTestConfig implements GitPackConfiguration {
+        boolean receivePackCalled;
+        boolean uploadPackCalled;
+
+        @Override
+        public void configureReceivePack(ServerSession session, ReceivePack pack) {
+            receivePackCalled = true;
+        }
+
+        @Override
+        public void configureUploadPack(ServerSession session, UploadPack pack) {
+            uploadPackCalled = true;
         }
     }
 }

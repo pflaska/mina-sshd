@@ -74,7 +74,7 @@ public class DefaultScpClient extends AbstractScpClient {
              OutputStream invIn = channel.getInvertedIn()) {
             // NOTE: we use a mock file system since we expect no invocations for it
             ScpHelper helper = new ScpHelper(session, invOut, invIn, new MockFileSystem(remote), opener, listener);
-            helper.receiveFileStream(local, ScpHelper.DEFAULT_RECEIVE_BUFFER_SIZE);
+            helper.receiveFileStream(cmd, local, ScpHelper.DEFAULT_RECEIVE_BUFFER_SIZE);
             handleCommandExitStatus(cmd, channel);
         } finally {
             channel.close(false);
@@ -89,7 +89,7 @@ public class DefaultScpClient extends AbstractScpClient {
         try (InputStream invOut = channel.getInvertedOut();
              OutputStream invIn = channel.getInvertedIn()) {
             ScpHelper helper = new ScpHelper(session, invOut, invIn, fs, opener, listener);
-            helper.receive(local,
+            helper.receive(cmd, local,
                     options.contains(Option.Recursive),
                     options.contains(Option.TargetIsDirectory),
                     options.contains(Option.PreserveAttributes),
@@ -104,21 +104,25 @@ public class DefaultScpClient extends AbstractScpClient {
     public void upload(
             InputStream local, String remote, long size, Collection<PosixFilePermission> perms, ScpTimestampCommandDetails time)
             throws IOException {
-        int namePos = ValidateUtils.checkNotNullAndNotEmpty(remote, "No remote location specified").lastIndexOf('/');
+        int namePos = ValidateUtils.hasContent(remote, "No remote location specified").lastIndexOf('/');
         String name = (namePos < 0)
                 ? remote
-                : ValidateUtils.checkNotNullAndNotEmpty(remote.substring(namePos + 1), "No name value in remote=%s", remote);
+                : ValidateUtils.hasContent(remote.substring(namePos + 1), "No name value in remote=%s", remote);
         Collection<Option> options = (time != null) ? EnumSet.of(Option.PreserveAttributes) : Collections.emptySet();
         String cmd = ScpClient.createSendCommand(remote, options);
         ClientSession session = getClientSession();
         ChannelExec channel = openCommandChannel(session, cmd);
-        try (InputStream invOut = channel.getInvertedOut();
-             OutputStream invIn = channel.getInvertedIn()) {
-            // NOTE: we use a mock file system since we expect no invocations for it
-            ScpHelper helper = new ScpHelper(session, invOut, invIn, new MockFileSystem(remote), opener, listener);
-            Path mockPath = new MockPath(remote);
-            helper.sendStream(new DefaultScpStreamResolver(name, mockPath, perms, time, size, local, cmd),
-                    options.contains(Option.PreserveAttributes), ScpHelper.DEFAULT_SEND_BUFFER_SIZE);
+        try {
+            try (InputStream invOut = channel.getInvertedOut();
+                 OutputStream invIn = channel.getInvertedIn()) {
+                // NOTE: we use a mock file system since we expect no invocations for it
+                ScpHelper helper = new ScpHelper(session, invOut, invIn, new MockFileSystem(remote), opener, listener);
+                Path mockPath = new MockPath(remote);
+                DefaultScpStreamResolver resolver = new DefaultScpStreamResolver(name, mockPath, perms, time, size, local, cmd);
+                helper.readAndValidateOperationAck(cmd, resolver);
+                helper.sendStream(resolver, options.contains(Option.PreserveAttributes),
+                        ScpHelper.DEFAULT_SEND_BUFFER_SIZE);
+            }
             handleCommandExitStatus(cmd, channel);
         } finally {
             channel.close(false);
@@ -130,7 +134,7 @@ public class DefaultScpClient extends AbstractScpClient {
             String remote, Collection<Option> options, Collection<T> local, AbstractScpClient.ScpOperationExecutor<T> executor)
             throws IOException {
         local = ValidateUtils.checkNotNullAndNotEmpty(local, "Invalid argument local: %s", local);
-        remote = ValidateUtils.checkNotNullAndNotEmpty(remote, "Invalid argument remote: %s", remote);
+        remote = ValidateUtils.hasContent(remote, "Invalid argument remote: %s", remote);
         if (local.size() > 1) {
             options = addTargetIsDirectory(options);
         }

@@ -32,6 +32,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Predicate;
 
 import javax.crypto.Cipher;
@@ -45,6 +46,7 @@ import org.apache.sshd.common.SyspropsMapWrapper;
 import org.apache.sshd.common.util.GenericUtils;
 import org.apache.sshd.common.util.IgnoringEmptyMap;
 import org.apache.sshd.common.util.ValidateUtils;
+import org.apache.sshd.common.util.security.eddsa.generic.EdDSASupport;
 
 /**
  * @author <a href="mailto:dev@mina.apache.org">Apache MINA SSHD Project</a>
@@ -189,6 +191,13 @@ public interface SecurityProviderRegistrar extends SecurityProviderChoice, Optio
     }
 
     /**
+     * @return the EdDSA support implementation associated with the security provider (if applicable)
+     */
+    default Optional<EdDSASupport<?, ?>> getEdDSASupport() {
+        return Optional.empty();
+    }
+
+    /**
      * @param  entityType The requested entity type - its simple name serves to build the configuration property name.
      * @return            Configuration value to use if no specific configuration provided - default=empty
      * @see               #isSecurityEntitySupported(Class, String)
@@ -307,14 +316,14 @@ public interface SecurityProviderRegistrar extends SecurityProviderChoice, Optio
      */
     static boolean registerSecurityProvider(SecurityProviderRegistrar registrar) {
         String name = ValidateUtils.checkNotNullAndNotEmpty(
-                (registrar == null) ? null : registrar.getName(), "No name for registrar=%s", registrar);
+                (registrar == null) ? null : registrar.getProviderName(), "No name for registrar=%s", registrar);
         Provider p = Security.getProvider(name);
         if (p != null) {
             return false;
         }
 
         p = ValidateUtils.checkNotNull(
-                registrar.getSecurityProvider(), "No provider created for registrar of %s", name);
+                registrar.getSecurityProvider(), "No provider created for registrar %s of %s", registrar.getName(), name);
         if (registrar.isNamedProviderUsed()) {
             Security.addProvider(p);
         }

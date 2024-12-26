@@ -20,7 +20,6 @@ package org.apache.sshd.sftp.client.impl;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
 import java.nio.file.attribute.FileTime;
@@ -262,10 +261,6 @@ public abstract class AbstractSftpClient
     protected void checkResponseStatus(int cmd, int id, SftpStatus status) throws IOException {
         if (!status.isOk()) {
             throwStatusException(cmd, id, status);
-        } else if (log.isTraceEnabled()) {
-            log.trace("throwStatusException({})[id={}] cmd={} status={}",
-                    getClientChannel(), id, SftpConstants.getCommandMessageName(cmd),
-                    status);
         }
     }
 
@@ -378,7 +373,7 @@ public abstract class AbstractSftpClient
                     longName = getReferencedName(cmd, buffer, nameIndex.getAndIncrement());
                 }
 
-                Attributes attrs = readAttributes(cmd, buffer, nameIndex);
+                Attributes attrs = SftpHelper.complete(readAttributes(cmd, buffer, nameIndex), longName);
                 Boolean indicator = SftpHelper.getEndOfListIndicatorValue(buffer, version);
                 // TODO decide what to do if not-null and not TRUE
                 if (log.isTraceEnabled()) {
@@ -425,6 +420,8 @@ public abstract class AbstractSftpClient
                 attrs.setModifyTime(SftpHelper.readTime(buffer, version, flags));
             }
         } else if (version >= SftpConstants.SFTP_V4) {
+            ValidateUtils.checkTrue((flags & SftpConstants.SSH_FILEXFER_ATTR_UIDGID) == 0,
+                    "SFTP v%d server sent invalid SSH_FXP_ATTRS flags 0x%X; flag 0x2 must not be set", version, flags);
             attrs.setType(buffer.getUByte());
             if ((flags & SftpConstants.SSH_FILEXFER_ATTR_SIZE) != 0) {
                 attrs.setSize(buffer.getLong());
@@ -678,33 +675,75 @@ public abstract class AbstractSftpClient
         buffer.putBytes(id);
         buffer.putLong(fileOffset);
         buffer.putUInt(len);
-        return checkData(SftpConstants.SSH_FXP_READ, buffer, dstOffset, dst, eofSignalled);
+        int reqId = send(SftpConstants.SSH_FXP_READ, buffer);
+        SftpAckData ack = new SftpAckData(reqId, fileOffset, len);
+        SftpResponse response = response(SftpConstants.SSH_FXP_READ, reqId);
+        buffer = checkDataResponse(ack, response, eofSignalled);
+        if (buffer == null) {
+            return -1; // EOF
+        }
+        if (buffer.available() <= 0) {
+            if (eofSignalled != null) {
+                Boolean eof = eofSignalled.get();
+                return (eof != null && eof.booleanValue()) ? -1 : 0;
+            }
+            return 0;
+        }
+        int bytesRead = buffer.available();
+        buffer.getRawBytes(dst, dstOffset, bytesRead);
+        return bytesRead;
     }
 
-    protected int checkData(
-            int cmd, Buffer request, int dstOffset, byte[] dst, AtomicReference<Boolean> eofSignalled)
+    /**
+     * Processes a response to an SSH_FXP_READ request.
+     *
+     * @param  ack          describing the SSH_FXP_READ request
+     * @param  response     SFTP response received
+     * @param  eofSignalled if non-{@code null}, set to {@code true} if an EOF was received
+     * @return              a {@link Buffer} containing the data received (may be empty), or {@code null} if the
+     *                      response was an SSH_FXP_EOF status
+     * @throws IOException  on errors
+     */
+    protected Buffer checkDataResponse(SftpAckData ack, SftpResponse response, AtomicReference<Boolean> eofSignalled)
             throws IOException {
-        return checkDataResponse(rpc(cmd, request), dstOffset, dst, eofSignalled);
-    }
-
-    protected int checkDataResponse(SftpResponse response, int dstoff, byte[] dst, AtomicReference<Boolean> eofSignalled)
-            throws IOException {
+        if (eofSignalled != null) {
+            eofSignalled.set(null);
+        }
         switch (response.getType()) {
             case SftpConstants.SSH_FXP_DATA:
                 Buffer buffer = response.getBuffer();
-                int len = buffer.getInt();
-                ValidateUtils.checkTrue(len >= 0, "Invalid response data len: %d", len);
-                buffer.getRawBytes(dst, dstoff, len);
-                Boolean indicator = SftpHelper.getEndOfFileIndicatorValue(buffer, getVersion());
-                if (log.isTraceEnabled()) {
-                    log.trace("checkDataResponse({}][id={}] {} offset={}, len={}, EOF={}", getClientChannel(),
-                            SftpConstants.getCommandMessageName(response.getCmd()), response.getId(), dstoff, len, indicator);
+                int dlen = buffer.getInt();
+                ValidateUtils.checkTrue(dlen >= 0 && dlen <= buffer.available(), "Invalid response data len: %d", dlen);
+                if (dlen > ack.length) {
+                    // Server sent more data than we requested. According to the SFTP draft RFCs, a server must never do
+                    // this. The length we request is a maximum that the server must never exceed.
+                    buffer.wpos(buffer.rpos() + ack.length);
+                    boolean dropExcessData = SftpModuleProperties.TOLERATE_EXCESS_DATA.getRequired(getClientChannel());
+                    if (dropExcessData) {
+                        log.warn(
+                                "checkDataResponse({}][id={}] {} offset={}, len={} SFTP protocol violation: server returned more data than requested, excess data dropped (requested len={})",
+                                getClientChannel(), SftpConstants.getCommandMessageName(response.getCmd()), response.getId(),
+                                ack.offset, dlen, ack.length);
+                    } else {
+                        throw new SshException("SFTP protocol violation: requested at most " + ack.length + " bytes but got "
+                                               + dlen + " bytes");
+                    }
+                } else {
+                    int rpos = buffer.rpos();
+                    buffer.rpos(rpos + dlen);
+                    Boolean indicator = SftpHelper.getEndOfFileIndicatorValue(buffer, getVersion());
+                    if (log.isTraceEnabled()) {
+                        log.trace("checkDataResponse({}][id={}] {} offset={}, len={}, EOF={}", getClientChannel(),
+                                SftpConstants.getCommandMessageName(response.getCmd()), response.getId(), ack.offset, dlen,
+                                indicator);
+                    }
+                    if (eofSignalled != null) {
+                        eofSignalled.set(indicator);
+                    }
+                    buffer.rpos(rpos);
+                    buffer.wpos(buffer.rpos() + dlen);
                 }
-                if (eofSignalled != null) {
-                    eofSignalled.set(indicator);
-                }
-
-                return len;
+                return buffer;
             case SftpConstants.SSH_FXP_STATUS:
                 SftpStatus status = SftpStatus.parse(response);
 
@@ -713,13 +752,16 @@ public abstract class AbstractSftpClient
                         log.trace("checkDataResponse({})[id={}] {} status: {}", getClientChannel(), response.getId(),
                                 SftpConstants.getCommandMessageName(response.getCmd()), status);
                     }
-                    return -1;
+                    if (eofSignalled != null) {
+                        eofSignalled.set(Boolean.TRUE);
+                    }
+                    return null;
                 }
-
-                throwStatusException(response.getCmd(), response.getId(), status);
-                return 0;
+                checkResponseStatus(SftpConstants.SSH_FXP_READ, response.getId(), status);
+                return new ByteArrayBuffer(new byte[0]);
             default:
-                return handleUnknownDataPacket(response);
+                handleUnknownDataPacket(response);
+                return new ByteArrayBuffer(new byte[0]);
         }
     }
 
@@ -898,12 +940,11 @@ public abstract class AbstractSftpClient
                         longName = getReferencedName(cmd, buffer, nameIndex.getAndIncrement());
                     }
 
-                    Attributes attrs = readAttributes(cmd, buffer, nameIndex);
+                    Attributes attrs = SftpHelper.complete(readAttributes(cmd, buffer, nameIndex), longName);
                     if (traceEnabled) {
                         log.trace("checkDirResponse({})[id={}][{}/{}] ({})[{}]: {}", channel, response.getId(), index, count,
                                 name, longName, attrs);
                     }
-
                     entries.add(new DirEntry(name, longName, attrs));
                 }
 
@@ -981,7 +1022,7 @@ public abstract class AbstractSftpClient
 
         int version = getVersion();
         if (version >= SftpConstants.SFTP_V4) {
-            buffer.putInt(SftpConstants.SSH_FILEXFER_ATTR_ALL);
+            buffer.putInt(SftpConstants.SSH_FILEXFER_ATTR_ALL & ~SftpConstants.SSH_FILEXFER_ATTR_UIDGID);
         }
 
         if (log.isDebugEnabled()) {
@@ -1001,7 +1042,7 @@ public abstract class AbstractSftpClient
 
         int version = getVersion();
         if (version >= SftpConstants.SFTP_V4) {
-            buffer.putInt(SftpConstants.SSH_FILEXFER_ATTR_ALL);
+            buffer.putInt(SftpConstants.SSH_FILEXFER_ATTR_ALL & ~SftpConstants.SSH_FILEXFER_ATTR_UIDGID);
         }
 
         if (log.isDebugEnabled()) {
@@ -1022,7 +1063,7 @@ public abstract class AbstractSftpClient
 
         int version = getVersion();
         if (version >= SftpConstants.SFTP_V4) {
-            buffer.putInt(SftpConstants.SSH_FILEXFER_ATTR_ALL);
+            buffer.putInt(SftpConstants.SSH_FILEXFER_ATTR_ALL & ~SftpConstants.SSH_FILEXFER_ATTR_UIDGID);
         }
 
         if (log.isDebugEnabled()) {
@@ -1197,11 +1238,8 @@ public abstract class AbstractSftpClient
     }
 
     @Override
-    public OutputStream write(String path, int bufferSize, Collection<OpenMode> mode) throws IOException {
-        if (bufferSize <= 0) {
-            bufferSize = getWriteBufferSize();
-        }
-        if (bufferSize < MIN_WRITE_BUFFER_SIZE) {
+    public SftpOutputStreamAsync write(String path, int bufferSize, Collection<OpenMode> mode) throws IOException {
+        if (bufferSize != 0 && bufferSize < MIN_WRITE_BUFFER_SIZE) {
             throw new IllegalArgumentException("Insufficient write buffer size: " + bufferSize + ", min.="
                                                + MIN_WRITE_BUFFER_SIZE);
         }
@@ -1213,11 +1251,19 @@ public abstract class AbstractSftpClient
         return new SftpOutputStreamAsync(this, bufferSize, path, mode);
     }
 
+    @Override
+    public void put(InputStream stream, int bufferSize, String path, Collection<OpenMode> modes) throws IOException {
+        try (SftpOutputStreamAsync out = write(path, bufferSize, modes)) {
+            out.transferFrom(stream);
+        }
+    }
+
     protected int getReadBufferSize() {
         return (int) getClientChannel().getLocalWindow().getPacketSize() - 13;
     }
 
     protected int getWriteBufferSize() {
+        // Do not use. -13 is wrong anyway.
         return (int) getClientChannel().getRemoteWindow().getPacketSize() - 13;
     }
 

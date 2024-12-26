@@ -20,15 +20,20 @@ package org.apache.sshd.git.pack;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.sshd.common.util.GenericUtils;
+import org.apache.sshd.common.util.MapEntryUtils;
 import org.apache.sshd.common.util.ValidateUtils;
 import org.apache.sshd.common.util.threads.CloseableExecutorService;
 import org.apache.sshd.git.AbstractGitCommand;
 import org.apache.sshd.git.GitLocationResolver;
+import org.apache.sshd.server.Environment;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.RepositoryCache;
+import org.eclipse.jgit.transport.GitProtocolConstants;
 import org.eclipse.jgit.transport.ReceivePack;
 import org.eclipse.jgit.transport.RemoteConfig;
 import org.eclipse.jgit.transport.UploadPack;
@@ -40,6 +45,9 @@ import org.eclipse.jgit.util.FS;
  * @author <a href="mailto:dev@mina.apache.org">Apache MINA SSHD Project</a>
  */
 public class GitPackCommand extends AbstractGitCommand {
+
+    private GitPackConfiguration packConfiguration = GitPackConfiguration.NOTHING;
+
     /**
      * @param rootDirResolver Resolver for GIT root directory
      * @param command         Command to execute
@@ -56,7 +64,7 @@ public class GitPackCommand extends AbstractGitCommand {
         String command = getCommand();
         try {
             List<String> strs = parseDelimitedString(command, " ", true);
-            String[] args = strs.toArray(new String[strs.size()]);
+            String[] args = strs.toArray(new String[0]);
             for (int i = 0; i < args.length; i++) {
                 String argVal = args[i];
                 if (argVal.startsWith("'") && argVal.endsWith("'")) {
@@ -77,9 +85,20 @@ public class GitPackCommand extends AbstractGitCommand {
             Repository db = key.open(true /* must exist */);
             String subCommand = args[0];
             if (RemoteConfig.DEFAULT_UPLOAD_PACK.equals(subCommand)) {
-                new UploadPack(db).upload(getInputStream(), getOutputStream(), getErrorStream());
+                UploadPack uploadPack = new UploadPack(db);
+                packConfiguration.configureUploadPack(getSession(), uploadPack);
+                Environment environment = getEnvironment();
+                Map<String, String> envVars = environment.getEnv();
+                String protocol = MapEntryUtils.isEmpty(envVars)
+                        ? null : envVars.get(GitProtocolConstants.PROTOCOL_ENVIRONMENT_VARIABLE);
+                if (GenericUtils.isNotBlank(protocol)) {
+                    uploadPack.setExtraParameters(Collections.singleton(protocol));
+                }
+                uploadPack.upload(getInputStream(), getOutputStream(), getErrorStream());
             } else if (RemoteConfig.DEFAULT_RECEIVE_PACK.equals(subCommand)) {
-                new ReceivePack(db).receive(getInputStream(), getOutputStream(), getErrorStream());
+                ReceivePack receivePack = new ReceivePack(db);
+                packConfiguration.configureReceivePack(getSession(), receivePack);
+                receivePack.receive(getInputStream(), getOutputStream(), getErrorStream());
             } else {
                 throw new IllegalArgumentException("Unknown git command: " + command);
             }
@@ -102,7 +121,12 @@ public class GitPackCommand extends AbstractGitCommand {
             pathArg = pathArg.substring(1);
         }
 
-        ValidateUtils.checkNotNullAndNotEmpty(pathArg, "No %s command sub-path specified", args[0]);
+        ValidateUtils.hasContent(pathArg, "No %s command sub-path specified", args[0]);
         return rootDir.resolve(pathArg);
+    }
+
+    public void setPackConfiguration(GitPackConfiguration packConfiguration) {
+        this.packConfiguration = ValidateUtils.checkNotNull(packConfiguration,
+                "Pack configuration must not be null");
     }
 }

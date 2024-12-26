@@ -65,10 +65,14 @@ import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.channel.ChannelDirectTcpip;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.client.session.forward.ExplicitPortForwardingTracker;
+import org.apache.sshd.common.channel.StreamingChannel.Streaming;
+import org.apache.sshd.common.io.IoInputStream;
+import org.apache.sshd.common.io.IoOutputStream;
 import org.apache.sshd.common.session.ConnectionService;
 import org.apache.sshd.common.util.GenericUtils;
 import org.apache.sshd.common.util.MapEntryUtils.NavigableMapBuilder;
 import org.apache.sshd.common.util.ProxyUtils;
+import org.apache.sshd.common.util.buffer.ByteArrayBuffer;
 import org.apache.sshd.common.util.io.IoUtils;
 import org.apache.sshd.common.util.net.SshdSocketAddress;
 import org.apache.sshd.core.CoreModuleProperties;
@@ -81,20 +85,28 @@ import org.apache.sshd.util.test.CoreTestSupportUtils;
 import org.apache.sshd.util.test.JSchLogger;
 import org.apache.sshd.util.test.JSchUtils;
 import org.apache.sshd.util.test.SimpleUserInfo;
-import org.junit.AfterClass;
-import org.junit.Assume;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.FixMethodOrder;
-import org.junit.Test;
-import org.junit.runners.MethodSorters;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer.MethodName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Port forwarding tests
  */
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+@TestMethodOrder(MethodName.class)
 @SuppressWarnings("checkstyle:MethodCount")
 public class PortForwardingTest extends BaseTestSupport {
 
@@ -182,8 +194,8 @@ public class PortForwardingTest extends BaseTestSupport {
         super();
     }
 
-    @BeforeClass
-    public static void setUpTestEnvironment() throws Exception {
+    @BeforeAll
+    static void setUpTestEnvironment() throws Exception {
         JSchLogger.init();
         sshd = CoreTestSupportUtils.setupTestFullSupportServer(PortForwardingTest.class);
         CoreModuleProperties.WINDOW_SIZE.set(sshd, 2048L);
@@ -258,8 +270,8 @@ public class PortForwardingTest extends BaseTestSupport {
         client.start();
     }
 
-    @AfterClass
-    public static void tearDownTestEnvironment() throws Exception {
+    @AfterAll
+    static void tearDownTestEnvironment() throws Exception {
         if (sshd != null) {
             sshd.stop(true);
         }
@@ -271,8 +283,8 @@ public class PortForwardingTest extends BaseTestSupport {
         }
     }
 
-    @Before
-    public void setUp() {
+    @BeforeEach
+    void setUp() {
         if (!REQUESTS_QUEUE.isEmpty()) {
             REQUESTS_QUEUE.clear();
         }
@@ -299,7 +311,7 @@ public class PortForwardingTest extends BaseTestSupport {
     }
 
     @Test
-    public void testRemoteForwarding() throws Exception {
+    void remoteForwarding() throws Exception {
         Session session = createSession();
         try {
             int forwardedPort = CoreTestSupportUtils.getFreePort();
@@ -320,7 +332,7 @@ public class PortForwardingTest extends BaseTestSupport {
                 byte[] buf = new byte[bytes.length + Long.SIZE];
                 int n = input.read(buf);
                 String res = new String(buf, 0, n, StandardCharsets.UTF_8);
-                assertEquals("Mismatched data", expected, res);
+                assertEquals(expected, res, "Mismatched data");
             } finally {
                 session.delPortForwardingR(forwardedPort);
             }
@@ -334,9 +346,9 @@ public class PortForwardingTest extends BaseTestSupport {
     }
 
     @Test
-    public void testRemoteForwardingSecondTimeInSameSession() throws Exception {
+    void remoteForwardingSecondTimeInSameSession() throws Exception {
         // TODO: remove assumption once DIRMINA-1169 is fixed in the MINA version we are using
-        Assume.assumeFalse("Skipped for MINA transport; can work reliably only once DIRMINS-1169 is fixed", isMina());
+        Assumptions.assumeFalse(isMina(), "Skipped for MINA transport; can work reliably only once DIRMINS-1169 is fixed");
         Session session = createSession();
         try {
             int forwardedPort = CoreTestSupportUtils.getFreePort();
@@ -363,7 +375,7 @@ public class PortForwardingTest extends BaseTestSupport {
                 byte[] buf = new byte[bytes.length + Long.SIZE];
                 int n = input.read(buf);
                 String res = new String(buf, 0, n, StandardCharsets.UTF_8);
-                assertEquals("Mismatched data", expected, res);
+                assertEquals(expected, res, "Mismatched data");
             } finally {
                 session.delPortForwardingR(TEST_LOCALHOST, forwardedPort);
             }
@@ -373,7 +385,7 @@ public class PortForwardingTest extends BaseTestSupport {
     }
 
     @Test
-    public void testRemoteForwardingNative() throws Exception {
+    void remoteForwardingNative() throws Exception {
         try (ClientSession session = createNativeSession(null)) {
             SshdSocketAddress remote = new SshdSocketAddress("", 0);
             SshdSocketAddress local = new SshdSocketAddress(TEST_LOCALHOST, echoPort);
@@ -393,7 +405,7 @@ public class PortForwardingTest extends BaseTestSupport {
                 byte[] buf = new byte[bytes.length + Long.SIZE];
                 int n = input.read(buf);
                 String res = new String(buf, 0, n);
-                assertEquals("Mismatched data", expected, res);
+                assertEquals(expected, res, "Mismatched data");
             } finally {
                 session.stopRemotePortForwarding(remote);
             }
@@ -401,7 +413,7 @@ public class PortForwardingTest extends BaseTestSupport {
     }
 
     @Test
-    public void testRemoteForwardingNativeBigPayload() throws Exception {
+    void remoteForwardingNativeBigPayload() throws Exception {
         AtomicReference<SshdSocketAddress> localAddressHolder = new AtomicReference<>();
         AtomicReference<SshdSocketAddress> remoteAddressHolder = new AtomicReference<>();
         AtomicReference<SshdSocketAddress> boundAddressHolder = new AtomicReference<>();
@@ -413,8 +425,8 @@ public class PortForwardingTest extends BaseTestSupport {
                     org.apache.sshd.common.session.Session session, SshdSocketAddress address, boolean localForwarding,
                     SshdSocketAddress remoteAddress, Throwable reason)
                     throws IOException {
-                assertFalse("Unexpected local tunnel has been torn down: address=" + address, localForwarding);
-                assertEquals("Tear down indication not invoked", 1, tearDownSignal.get());
+                assertFalse(localForwarding, "Unexpected local tunnel has been torn down: address=" + address);
+                assertEquals(1, tearDownSignal.get(), "Tear down indication not invoked");
             }
 
             @Override
@@ -430,8 +442,8 @@ public class PortForwardingTest extends BaseTestSupport {
                     org.apache.sshd.common.session.Session session, SshdSocketAddress address, boolean localForwarding,
                     SshdSocketAddress remoteAddress)
                     throws IOException {
-                assertFalse("Unexpected local tunnel being torn down: address=" + address, localForwarding);
-                assertEquals("Duplicate tear down signalling", 1, tearDownSignal.incrementAndGet());
+                assertFalse(localForwarding, "Unexpected local tunnel being torn down: address=" + address);
+                assertEquals(1, tearDownSignal.incrementAndGet(), "Duplicate tear down signalling");
             }
 
             @Override
@@ -446,12 +458,12 @@ public class PortForwardingTest extends BaseTestSupport {
                     org.apache.sshd.common.session.Session session, SshdSocketAddress local, SshdSocketAddress remote,
                     boolean localForwarding)
                     throws IOException {
-                assertFalse("Unexpected local tunnel being established: local=" + local + ", remote=" + remote,
-                        localForwarding);
-                assertNull("Duplicate establishment indication call for local address=" + local,
-                        localAddressHolder.getAndSet(local));
-                assertNull("Duplicate establishment indication call for remote address=" + remote,
-                        remoteAddressHolder.getAndSet(remote));
+                assertFalse(localForwarding,
+                        "Unexpected local tunnel being established: local=" + local + ", remote=" + remote);
+                assertNull(localAddressHolder.getAndSet(local),
+                        "Duplicate establishment indication call for local address=" + local);
+                assertNull(remoteAddressHolder.getAndSet(remote),
+                        "Duplicate establishment indication call for remote address=" + remote);
             }
 
             @Override
@@ -466,13 +478,13 @@ public class PortForwardingTest extends BaseTestSupport {
                     org.apache.sshd.common.session.Session session, SshdSocketAddress local,
                     SshdSocketAddress remote, boolean localForwarding, SshdSocketAddress boundAddress, Throwable reason)
                     throws IOException {
-                assertFalse("Unexpected local tunnel has been established: local=" + local + ", remote=" + remote + ", bound="
-                            + boundAddress,
-                        localForwarding);
-                assertSame("Mismatched established tunnel local address", local, localAddressHolder.get());
-                assertSame("Mismatched established tunnel remote address", remote, remoteAddressHolder.get());
-                assertNull("Duplicate establishment indication call for bound address=" + boundAddress,
-                        boundAddressHolder.getAndSet(boundAddress));
+                assertFalse(localForwarding,
+                        "Unexpected local tunnel has been established: local=" + local + ", remote=" + remote + ", bound="
+                                             + boundAddress);
+                assertSame(local, localAddressHolder.get(), "Mismatched established tunnel local address");
+                assertSame(remote, remoteAddressHolder.get(), "Mismatched established tunnel remote address");
+                assertNull(boundAddressHolder.getAndSet(boundAddress),
+                        "Duplicate establishment indication call for bound address=" + boundAddress);
             }
 
             @Override
@@ -488,8 +500,8 @@ public class PortForwardingTest extends BaseTestSupport {
         try (ClientSession session = createNativeSession(listener);
              ExplicitPortForwardingTracker tracker = session.createRemotePortForwardingTracker(new SshdSocketAddress("", 0),
                      new SshdSocketAddress(TEST_LOCALHOST, echoPort))) {
-            assertTrue("Tracker not marked as open", tracker.isOpen());
-            assertFalse("Tracker not marked as remote", tracker.isLocalForwarding());
+            assertTrue(tracker.isOpen(), "Tracker not marked as open");
+            assertFalse(tracker.isLocalForwarding(), "Tracker not marked as remote");
 
             SshdSocketAddress bound = tracker.getBoundAddress();
             try (Socket s = new Socket(bound.getHostName(), bound.getPort());
@@ -508,23 +520,23 @@ public class PortForwardingTest extends BaseTestSupport {
 
                     int n = input.read(buf);
                     String res = new String(buf, 0, n, StandardCharsets.UTF_8);
-                    assertEquals("Mismatched data at iteration #" + i, expected, res);
+                    assertEquals(expected, res, "Mismatched data at iteration #" + i);
                 }
             } finally {
                 tracker.close();
             }
-            assertFalse("Tracker not marked as closed", tracker.isOpen());
+            assertFalse(tracker.isOpen(), "Tracker not marked as closed");
         } finally {
             client.removePortForwardingEventListener(listener);
         }
 
-        assertNotNull("Local tunnel address not indicated", localAddressHolder.getAndSet(null));
-        assertNotNull("Remote tunnel address not indicated", remoteAddressHolder.getAndSet(null));
-        assertNotNull("Bound tunnel address not indicated", boundAddressHolder.getAndSet(null));
+        assertNotNull(localAddressHolder.getAndSet(null), "Local tunnel address not indicated");
+        assertNotNull(remoteAddressHolder.getAndSet(null), "Remote tunnel address not indicated");
+        assertNotNull(boundAddressHolder.getAndSet(null), "Bound tunnel address not indicated");
     }
 
     @Test
-    public void testLocalForwarding() throws Exception {
+    void localForwarding() throws Exception {
         Session session = createSession();
         try {
             int forwardedPort = CoreTestSupportUtils.getFreePort();
@@ -545,7 +557,7 @@ public class PortForwardingTest extends BaseTestSupport {
                 byte[] buf = new byte[bytes.length + Long.SIZE];
                 int n = input.read(buf);
                 String res = new String(buf, 0, n, StandardCharsets.UTF_8);
-                assertEquals("Mismatched data", expected, res);
+                assertEquals(expected, res, "Mismatched data");
             } finally {
                 session.delPortForwardingL(forwardedPort);
             }
@@ -555,7 +567,7 @@ public class PortForwardingTest extends BaseTestSupport {
     }
 
     @Test
-    public void testLocalForwardingNative() throws Exception {
+    void localForwardingNative() throws Exception {
         AtomicReference<SshdSocketAddress> localAddressHolder = new AtomicReference<>();
         AtomicReference<SshdSocketAddress> remoteAddressHolder = new AtomicReference<>();
         AtomicReference<SshdSocketAddress> boundAddressHolder = new AtomicReference<>();
@@ -568,8 +580,8 @@ public class PortForwardingTest extends BaseTestSupport {
                     org.apache.sshd.common.session.Session session, SshdSocketAddress address, boolean localForwarding,
                     SshdSocketAddress remoteAddress, Throwable reason)
                     throws IOException {
-                assertTrue("Unexpected remote tunnel has been torn down: address=" + address, localForwarding);
-                assertEquals("Tear down indication not invoked", 1, tearDownSignal.get());
+                assertTrue(localForwarding, "Unexpected remote tunnel has been torn down: address=" + address);
+                assertEquals(1, tearDownSignal.get(), "Tear down indication not invoked");
                 tearDownSignalInvoked.set(true);
             }
 
@@ -586,8 +598,8 @@ public class PortForwardingTest extends BaseTestSupport {
                     org.apache.sshd.common.session.Session session, SshdSocketAddress address, boolean localForwarding,
                     SshdSocketAddress remoteAddress)
                     throws IOException {
-                assertTrue("Unexpected remote tunnel being torn down: address=" + address, localForwarding);
-                assertEquals("Duplicate tear down signalling", 1, tearDownSignal.incrementAndGet());
+                assertTrue(localForwarding, "Unexpected remote tunnel being torn down: address=" + address);
+                assertEquals(1, tearDownSignal.incrementAndGet(), "Duplicate tear down signalling");
             }
 
             @Override
@@ -602,12 +614,12 @@ public class PortForwardingTest extends BaseTestSupport {
                     org.apache.sshd.common.session.Session session, SshdSocketAddress local, SshdSocketAddress remote,
                     boolean localForwarding)
                     throws IOException {
-                assertTrue("Unexpected remote tunnel being established: local=" + local + ", remote=" + remote,
-                        localForwarding);
-                assertNull("Duplicate establishment indication call for local address=" + local,
-                        localAddressHolder.getAndSet(local));
-                assertNull("Duplicate establishment indication call for remote address=" + remote,
-                        remoteAddressHolder.getAndSet(remote));
+                assertTrue(localForwarding,
+                        "Unexpected remote tunnel being established: local=" + local + ", remote=" + remote);
+                assertNull(localAddressHolder.getAndSet(local),
+                        "Duplicate establishment indication call for local address=" + local);
+                assertNull(remoteAddressHolder.getAndSet(remote),
+                        "Duplicate establishment indication call for remote address=" + remote);
             }
 
             @Override
@@ -622,13 +634,13 @@ public class PortForwardingTest extends BaseTestSupport {
                     org.apache.sshd.common.session.Session session, SshdSocketAddress local,
                     SshdSocketAddress remote, boolean localForwarding, SshdSocketAddress boundAddress, Throwable reason)
                     throws IOException {
-                assertTrue("Unexpected remote tunnel has been established: local=" + local + ", remote=" + remote + ", bound="
-                           + boundAddress,
-                        localForwarding);
-                assertSame("Mismatched established tunnel local address", local, localAddressHolder.get());
-                assertSame("Mismatched established tunnel remote address", remote, remoteAddressHolder.get());
-                assertNull("Duplicate establishment indication call for bound address=" + boundAddress,
-                        boundAddressHolder.getAndSet(boundAddress));
+                assertTrue(localForwarding,
+                        "Unexpected remote tunnel has been established: local=" + local + ", remote=" + remote + ", bound="
+                                            + boundAddress);
+                assertSame(local, localAddressHolder.get(), "Mismatched established tunnel local address");
+                assertSame(remote, remoteAddressHolder.get(), "Mismatched established tunnel remote address");
+                assertNull(boundAddressHolder.getAndSet(boundAddress),
+                        "Duplicate establishment indication call for bound address=" + boundAddress);
             }
 
             @Override
@@ -644,8 +656,8 @@ public class PortForwardingTest extends BaseTestSupport {
         try (ClientSession session = createNativeSession(listener);
              ExplicitPortForwardingTracker tracker = session.createLocalPortForwardingTracker(new SshdSocketAddress("", 0),
                      new SshdSocketAddress(TEST_LOCALHOST, echoPort))) {
-            assertTrue("Tracker not marked as open", tracker.isOpen());
-            assertTrue("Tracker not marked as local", tracker.isLocalForwarding());
+            assertTrue(tracker.isOpen(), "Tracker not marked as open");
+            assertTrue(tracker.isLocalForwarding(), "Tracker not marked as local");
 
             SshdSocketAddress bound = tracker.getBoundAddress();
             try (Socket s = new Socket(bound.getHostName(), bound.getPort());
@@ -662,26 +674,26 @@ public class PortForwardingTest extends BaseTestSupport {
 
                 byte[] buf = new byte[bytes.length + Long.SIZE];
                 int n = input.read(buf);
-                assertTrue("No data read from tunnel", n > 0);
+                assertTrue(n > 0, "No data read from tunnel");
 
                 String res = new String(buf, 0, n, StandardCharsets.UTF_8);
-                assertEquals("Mismatched data", expected, res);
+                assertEquals(expected, res, "Mismatched data");
             } finally {
                 tracker.close();
             }
-            assertFalse("Tracker not marked as closed", tracker.isOpen());
-            assertTrue("Tear down signal did not occur", tearDownSignalInvoked.get());
+            assertFalse(tracker.isOpen(), "Tracker not marked as closed");
+            assertTrue(tearDownSignalInvoked.get(), "Tear down signal did not occur");
         } finally {
             client.removePortForwardingEventListener(listener);
         }
 
-        assertNotNull("Local tunnel address not indicated", localAddressHolder.getAndSet(null));
-        assertNotNull("Remote tunnel address not indicated", remoteAddressHolder.getAndSet(null));
-        assertNotNull("Bound tunnel address not indicated", boundAddressHolder.getAndSet(null));
+        assertNotNull(localAddressHolder.getAndSet(null), "Local tunnel address not indicated");
+        assertNotNull(remoteAddressHolder.getAndSet(null), "Remote tunnel address not indicated");
+        assertNotNull(boundAddressHolder.getAndSet(null), "Bound tunnel address not indicated");
     }
 
     @Test
-    public void testLocalForwardingNativeReuse() throws Exception {
+    void localForwardingNativeReuse() throws Exception {
         try (ClientSession session = createNativeSession(null)) {
             SshdSocketAddress local = new SshdSocketAddress("", 0);
             SshdSocketAddress remote = new SshdSocketAddress(TEST_LOCALHOST, echoPort);
@@ -695,7 +707,7 @@ public class PortForwardingTest extends BaseTestSupport {
     }
 
     @Test
-    public void testLocalForwardingNativeBigPayload() throws Exception {
+    void localForwardingNativeBigPayload() throws Exception {
         try (ClientSession session = createNativeSession(null)) {
             String expected = getCurrentTestName();
             byte[] bytes = expected.getBytes(StandardCharsets.UTF_8);
@@ -715,10 +727,10 @@ public class PortForwardingTest extends BaseTestSupport {
                     output.flush();
 
                     int n = input.read(buf);
-                    assertTrue("No data read from tunnel", n > 0);
+                    assertTrue(n > 0, "No data read from tunnel");
 
                     String res = new String(buf, 0, n, StandardCharsets.UTF_8);
-                    assertEquals("Mismatched data at iteration #" + i, expected, res);
+                    assertEquals(expected, res, "Mismatched data at iteration #" + i);
                 }
             } finally {
                 session.stopLocalPortForwarding(bound);
@@ -727,7 +739,7 @@ public class PortForwardingTest extends BaseTestSupport {
     }
 
     @Test
-    public void testForwardingChannel() throws Exception {
+    void forwardingChannel() throws Exception {
         try (ClientSession session = createNativeSession(null)) {
             SshdSocketAddress local = new SshdSocketAddress("", 0);
             SshdSocketAddress remote = new SshdSocketAddress(TEST_LOCALHOST, echoPort);
@@ -746,15 +758,42 @@ public class PortForwardingTest extends BaseTestSupport {
                     byte[] buf = new byte[bytes.length + Long.SIZE];
                     int n = input.read(buf);
                     String res = new String(buf, 0, n, StandardCharsets.UTF_8);
-                    assertEquals("Mismatched data", expected, res);
+                    assertEquals(expected, res, "Mismatched data");
                 }
                 channel.close(false);
             }
         }
     }
 
-    @Test(timeout = 45000)
-    public void testRemoteForwardingWithDisconnect() throws Exception {
+    @Test
+    void forwardingChannelAsync() throws Exception {
+        try (ClientSession session = createNativeSession(null)) {
+            SshdSocketAddress local = new SshdSocketAddress("", 0);
+            SshdSocketAddress remote = new SshdSocketAddress(TEST_LOCALHOST, echoPort);
+
+            try (ChannelDirectTcpip channel = session.createDirectTcpipChannel(local, remote)) {
+                channel.setStreaming(Streaming.Async);
+                channel.open().verify(OPEN_TIMEOUT);
+
+                String expected = getCurrentTestName();
+                byte[] bytes = expected.getBytes(StandardCharsets.UTF_8);
+
+                try (IoOutputStream output = channel.getAsyncIn();
+                     IoInputStream input = channel.getAsyncOut()) {
+                    output.writeBuffer(new ByteArrayBuffer(bytes)).verify(DEFAULT_TIMEOUT);
+                    ByteArrayBuffer buf = new ByteArrayBuffer();
+                    input.read(buf).verify(DEFAULT_TIMEOUT);
+                    String res = new String(buf.getCompactData(), StandardCharsets.UTF_8);
+                    assertEquals(expected, res, "Mismatched data");
+                }
+                channel.close(false);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(value = 45000, unit = TimeUnit.MILLISECONDS)
+    void remoteForwardingWithDisconnect() throws Exception {
         Session session = createSession();
         try {
             // 1. Create a Port Forward
@@ -799,8 +838,9 @@ public class PortForwardingTest extends BaseTestSupport {
         }
     }
 
-    @Test   // see SSHD-1066
-    public void testLocalBindingOnDifferentInterfaces() throws Exception {
+    // see SSHD-1066
+    @Test
+    void localBindingOnDifferentInterfaces() throws Exception {
         InetSocketAddress addr = (InetSocketAddress) GenericUtils.head(sshd.getBoundAddresses());
         log.info("{} - using bound address={}", getCurrentTestName(), addr);
 
@@ -851,7 +891,7 @@ public class PortForwardingTest extends BaseTestSupport {
              BufferedReader in = new BufferedReader(new InputStreamReader(inputStream))) {
             result = in.lines().collect(Collectors.joining(System.lineSeparator()));
         }
-        assertEquals("Unexpected server response", "OK", result);
+        assertEquals("OK", result, "Unexpected server response");
     }
 
     /**
@@ -865,10 +905,10 @@ public class PortForwardingTest extends BaseTestSupport {
         fSocket.setAccessible(true);
 
         try (Socket socket = (Socket) fSocket.get(session)) {
-            assertTrue("socket is not connected", socket.isConnected());
-            assertFalse("socket should not be closed", socket.isClosed());
+            assertTrue(socket.isConnected(), "socket is not connected");
+            assertFalse(socket.isClosed(), "socket should not be closed");
             socket.close();
-            assertTrue("socket has not closed", socket.isClosed());
+            assertTrue(socket.isClosed(), "socket has not closed");
         }
     }
 

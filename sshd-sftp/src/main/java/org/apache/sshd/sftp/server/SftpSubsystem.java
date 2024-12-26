@@ -78,12 +78,11 @@ import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.channel.ChannelSessionAware;
 import org.apache.sshd.server.command.AsyncCommand;
 import org.apache.sshd.server.command.AsyncCommandErrorStreamAware;
-import org.apache.sshd.server.command.Command;
 import org.apache.sshd.server.command.CommandDirectErrorStreamAware;
 import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.sftp.SftpModuleProperties;
 import org.apache.sshd.sftp.client.fs.SftpPath;
-import org.apache.sshd.sftp.client.impl.SftpPathImpl;
+import org.apache.sshd.sftp.client.fs.WithFileAttributeCache;
 import org.apache.sshd.sftp.common.SftpConstants;
 import org.apache.sshd.sftp.common.SftpException;
 import org.apache.sshd.sftp.common.SftpHelper;
@@ -95,7 +94,7 @@ import org.apache.sshd.sftp.common.SftpHelper;
  */
 public class SftpSubsystem
         extends AbstractSftpSubsystemHelper
-        implements Command, Runnable, FileSystemAware, ExecutorServiceCarrier,
+        implements Runnable, FileSystemAware, ExecutorServiceCarrier,
         AsyncCommand, ChannelDataReceiver {
     protected static final Buffer CLOSE = new ByteArrayBuffer(null, 0, 0);
 
@@ -783,7 +782,7 @@ public class SftpSubsystem
 
     @Override
     protected String doOpenDir(int id, String path, Path dir, LinkOption... options) throws IOException {
-        SftpPathImpl.withAttributeCache(dir, p -> {
+        WithFileAttributeCache.withAttributeCache(dir, p -> {
             Boolean status = IoUtils.checkFileExistsAnySymlinks(p, !IoUtils.followLinks(options));
             if (status == null) {
                 throw signalOpenFailure(id, path, p, true,

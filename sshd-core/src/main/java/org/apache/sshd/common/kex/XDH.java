@@ -22,7 +22,6 @@ package org.apache.sshd.common.kex;
 import java.security.KeyPair;
 import java.util.Objects;
 
-import org.apache.sshd.common.digest.Digest;
 import org.apache.sshd.common.util.buffer.Buffer;
 
 /**
@@ -30,14 +29,21 @@ import org.apache.sshd.common.util.buffer.Buffer;
  *
  * @see <a href="https://www.rfc-editor.org/info/rfc8731">RFC 8731</a>
  */
-public class XDH extends AbstractDH {
+public abstract class XDH extends AbstractDH implements CurveSizeIndicator {
 
-    protected MontgomeryCurve curve;
+    protected final MontgomeryCurve curve;
+    protected final boolean raw;
     protected byte[] f;
 
-    public XDH(MontgomeryCurve curve) throws Exception {
+    public XDH(MontgomeryCurve curve, boolean raw) throws Exception {
         this.curve = Objects.requireNonNull(curve, "No MontgomeryCurve provided");
+        this.raw = raw;
         myKeyAgree = curve.createKeyAgreement();
+    }
+
+    @Override
+    public int getByteLength() {
+        return curve.getByteLength();
     }
 
     @Override
@@ -74,11 +80,7 @@ public class XDH extends AbstractDH {
     protected byte[] calculateK() throws Exception {
         Objects.requireNonNull(f, "Missing 'f' value");
         myKeyAgree.doPhase(curve.decode(f), true);
-        return stripLeadingZeroes(myKeyAgree.generateSecret());
-    }
-
-    @Override
-    public Digest getHash() throws Exception {
-        return curve.createDigest();
+        byte[] secret = myKeyAgree.generateSecret();
+        return raw ? secret : stripLeadingZeroes(secret);
     }
 }

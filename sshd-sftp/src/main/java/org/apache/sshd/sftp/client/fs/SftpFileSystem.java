@@ -25,6 +25,7 @@ import java.io.StreamCorruptedException;
 import java.nio.charset.Charset;
 import java.nio.file.FileStore;
 import java.nio.file.FileSystemException;
+import java.nio.file.Path;
 import java.nio.file.attribute.GroupPrincipal;
 import java.nio.file.attribute.UserPrincipal;
 import java.nio.file.attribute.UserPrincipalLookupService;
@@ -66,6 +67,7 @@ import org.apache.sshd.sftp.client.RawSftpClient;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.SftpClientFactory;
 import org.apache.sshd.sftp.client.SftpErrorDataHandler;
+import org.apache.sshd.sftp.client.SftpMessage;
 import org.apache.sshd.sftp.client.SftpVersionSelector;
 import org.apache.sshd.sftp.client.impl.AbstractSftpClient;
 import org.apache.sshd.sftp.client.impl.SftpPathImpl;
@@ -565,6 +567,36 @@ public class SftpFileSystem
         }
 
         @Override
+        public void put(Path localFile, String path) throws IOException {
+            put(localFile, writeSize, path);
+        }
+
+        @Override
+        public void put(InputStream stream, String path) throws IOException {
+            put(stream, writeSize, path);
+        }
+
+        @Override
+        public void put(Path localFile, String path, OpenMode... modes) throws IOException {
+            put(localFile, writeSize, path, GenericUtils.of(modes));
+        }
+
+        @Override
+        public void put(InputStream stream, String path, OpenMode... modes) throws IOException {
+            put(stream, writeSize, path, GenericUtils.of(modes));
+        }
+
+        @Override
+        public void put(Path localFile, String path, Collection<OpenMode> modes) throws IOException {
+            put(localFile, writeSize, path, modes);
+        }
+
+        @Override
+        public void put(InputStream stream, String path, Collection<OpenMode> modes) throws IOException {
+            put(stream, writeSize, path, modes);
+        }
+
+        @Override
         public void link(String linkPath, String targetPath, boolean symbolic) throws IOException {
             if (!isOpen()) {
                 throw new IOException(
@@ -602,6 +634,21 @@ public class SftpFileSystem
             } else {
                 throw new StreamCorruptedException(
                         "send(cmd=" + SftpConstants.getCommandMessageName(cmd) + ") delegate is not a "
+                                                   + RawSftpClient.class.getSimpleName());
+            }
+        }
+
+        @Override
+        public SftpMessage write(int cmd, Buffer buffer) throws IOException {
+            if (!isOpen()) {
+                throw new IOException("write(cmd=" + SftpConstants.getCommandMessageName(cmd) + ") client is closed");
+            }
+
+            if (delegate instanceof RawSftpClient) {
+                return ((RawSftpClient) delegate).write(cmd, buffer);
+            } else {
+                throw new StreamCorruptedException(
+                        "write(cmd=" + SftpConstants.getCommandMessageName(cmd) + ") delegate is not a "
                                                    + RawSftpClient.class.getSimpleName());
             }
         }

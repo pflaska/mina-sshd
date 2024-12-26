@@ -26,7 +26,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import ch.ethz.ssh2.Connection;
@@ -41,28 +43,24 @@ import org.apache.sshd.util.test.BaseTestSupport;
 import org.apache.sshd.util.test.CommonTestSupportUtils;
 import org.apache.sshd.util.test.CoreTestSupportUtils;
 import org.apache.sshd.util.test.JSchLogger;
-import org.apache.sshd.util.test.JUnit4ClassRunnerWithParametersFactory;
 import org.apache.sshd.util.test.SimpleUserInfo;
-import org.junit.AfterClass;
-import org.junit.Assume;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.FixMethodOrder;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.MethodSorters;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
-import org.junit.runners.Parameterized.UseParametersRunnerFactory;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer.MethodName;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Test MAC algorithms with other known implementations.
  *
  * @author <a href="mailto:dev@mina.apache.org">Apache MINA SSHD Project</a>
  */
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
-@RunWith(Parameterized.class) // see https://github.com/junit-team/junit/wiki/Parameterized-tests
-@UseParametersRunnerFactory(JUnit4ClassRunnerWithParametersFactory.class)
+@TestMethodOrder(MethodName.class) // see https://github.com/junit-team/junit/wiki/Parameterized-tests
 public class MacCompatibilityTest extends BaseTestSupport {
     private static final Collection<String> GANYMEDE_MACS = Collections.unmodifiableSet(
             GenericUtils.asSortedSet(String.CASE_INSENSITIVE_ORDER, Connection.getAvailableMACs()));
@@ -70,15 +68,8 @@ public class MacCompatibilityTest extends BaseTestSupport {
     private static SshServer sshd;
     private static int port;
 
-    private final MacFactory factory;
-    private final String jschMacClass;
+    private MacFactory factory;
 
-    public MacCompatibilityTest(MacFactory factory, String jschMacClass) {
-        this.factory = factory;
-        this.jschMacClass = jschMacClass;
-    }
-
-    @Parameters(name = "factory={0}")
     public static Collection<Object[]> parameters() {
         List<Object[]> ret = new ArrayList<>();
         for (MacFactory f : BuiltinMacs.VALUES) {
@@ -118,8 +109,8 @@ public class MacCompatibilityTest extends BaseTestSupport {
         return ret;
     }
 
-    @BeforeClass
-    public static void setupClientAndServer() throws Exception {
+    @BeforeAll
+    static void setupClientAndServer() throws Exception {
         JSchLogger.init();
         setupClientAndServer(MacCompatibilityTest.class);
     }
@@ -140,8 +131,8 @@ public class MacCompatibilityTest extends BaseTestSupport {
         port = sshd.getPort();
     }
 
-    @AfterClass
-    public static void tearDownClientAndServer() throws Exception {
+    @AfterAll
+    static void tearDownClientAndServer() throws Exception {
         if (sshd != null) {
             try {
                 sshd.stop(true);
@@ -151,47 +142,58 @@ public class MacCompatibilityTest extends BaseTestSupport {
         }
     }
 
-    @Before
-    public void setUp() throws Exception {
+    @MethodSource("parameters")
+    @ParameterizedTest(name = "factory={0}")
+    public void withJSCH(MacFactory factory, String jschMacClass) throws Exception {
         sshd.setMacFactories(Collections.singletonList(factory));
-    }
-
-    @Test
-    public void testWithJSCH() throws Exception {
         String macName = factory.getName();
-        Assume.assumeTrue("Known JSCH bug with " + macName, !BuiltinMacs.hmacsha512.equals(factory));
+        Assumptions.assumeTrue(!BuiltinMacs.hmacsha512.equals(factory), "Known JSCH bug with " + macName);
 
         JSch sch = new JSch();
-        JSch.setConfig("cipher.s2c", "aes128-cbc,3des-cbc,blowfish-cbc,aes192-cbc,aes256-cbc,none");
-        JSch.setConfig("cipher.c2s", "aes128-cbc,3des-cbc,blowfish-cbc,aes192-cbc,aes256-cbc,none");
-        JSch.setConfig("mac.s2c", macName);
-        JSch.setConfig("mac.c2s", macName);
-        JSch.setConfig(macName, jschMacClass);
-
-        com.jcraft.jsch.Session session = sch.getSession(getCurrentTestName(), TEST_LOCALHOST, port);
+        Map<String, String> values = new HashMap<>();
+        values.put("cipher.s2c", JSch.getConfig("cipher.s2c"));
+        values.put("cipher.c2s", JSch.getConfig("cipher.s2c"));
+        values.put("mac.s2c", JSch.getConfig("mac.s2c"));
+        values.put("mac.c2s", JSch.getConfig("mac.s2c"));
+        values.put(macName, JSch.getConfig(macName));
         try {
-            session.setUserInfo(new SimpleUserInfo(getCurrentTestName()));
-            session.connect();
+            JSch.setConfig("cipher.s2c", "aes128-ctr,aes192-ctr,aes256-ctr,none");
+            JSch.setConfig("cipher.c2s", "aes128-ctr,aes192-ctr,aes256-ctr,none");
+            JSch.setConfig("mac.s2c", macName);
+            JSch.setConfig("mac.c2s", macName);
+            JSch.setConfig(macName, jschMacClass);
 
-            com.jcraft.jsch.Channel channel = session.openChannel(Channel.CHANNEL_SHELL);
-            channel.connect();
+            com.jcraft.jsch.Session session = sch.getSession(getCurrentTestName(), TEST_LOCALHOST, port);
+            try {
+                session.setUserInfo(new SimpleUserInfo(getCurrentTestName()));
+                session.connect();
 
-            try (OutputStream stdin = channel.getOutputStream();
-                 InputStream stdout = channel.getInputStream();
-                 InputStream stderr = channel.getExtInputStream()) {
-                runShellTest(stdin, stdout);
+                com.jcraft.jsch.Channel channel = session.openChannel(Channel.CHANNEL_SHELL);
+                channel.connect();
+
+                try (OutputStream stdin = channel.getOutputStream();
+                     InputStream stdout = channel.getInputStream();
+                     InputStream stderr = channel.getExtInputStream()) {
+                    runShellTest(stdin, stdout);
+                } finally {
+                    channel.disconnect();
+                }
             } finally {
-                channel.disconnect();
+                session.disconnect();
             }
         } finally {
-            session.disconnect();
+            for (Map.Entry<String, String> item : values.entrySet()) {
+                JSch.setConfig(item.getKey(), item.getValue());
+            }
         }
     }
 
-    @Test
-    public void testWithGanymede() throws Exception {
+    @MethodSource("parameters")
+    @ParameterizedTest(name = "factory={0}")
+    public void withGanymede(MacFactory factory, String jschMacClass) throws Exception {
+        sshd.setMacFactories(Collections.singletonList(factory));
         String macName = factory.getName();
-        Assume.assumeTrue("Factory not supported: " + macName, GANYMEDE_MACS.contains(macName));
+        Assumptions.assumeTrue(GANYMEDE_MACS.contains(macName), "Factory not supported: " + macName);
 
         ch.ethz.ssh2.log.Logger.enabled = true;
         Connection conn = new Connection(TEST_LOCALHOST, port);
@@ -204,7 +206,7 @@ public class MacCompatibilityTest extends BaseTestSupport {
                     info.keyExchangeAlgorithm, info.serverHostKeyAlgorithm,
                     info.clientToServerCryptoAlgorithm, info.serverToClientCryptoAlgorithm,
                     info.clientToServerMACAlgorithm, info.serverToClientMACAlgorithm);
-            assertTrue("Failed to authenticate", conn.authenticateWithPassword(getCurrentTestName(), getCurrentTestName()));
+            assertTrue(conn.authenticateWithPassword(getCurrentTestName(), getCurrentTestName()), "Failed to authenticate");
 
             ch.ethz.ssh2.Session session = conn.openSession();
             try {
@@ -232,7 +234,7 @@ public class MacCompatibilityTest extends BaseTestSupport {
 
             int len = stdout.read(data);
             String str = new String(data, 0, len, StandardCharsets.UTF_8);
-            assertEquals("Mismatched data at iteration " + index, expected, str);
+            assertEquals(expected, str, "Mismatched data at iteration " + index);
         }
     }
 }

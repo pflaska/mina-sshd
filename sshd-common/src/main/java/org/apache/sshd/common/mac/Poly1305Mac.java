@@ -36,19 +36,19 @@ public class Poly1305Mac implements Mac {
     public static final int KEY_BYTES = 32;
     private static final int BLOCK_SIZE = 16;
 
-    private int r0;
-    private int r1;
-    private int r2;
-    private int r3;
-    private int r4;
-    private int s1;
-    private int s2;
-    private int s3;
-    private int s4;
-    private int k0;
-    private int k1;
-    private int k2;
-    private int k3;
+    private long r0;
+    private long r1;
+    private long r2;
+    private long r3;
+    private long r4;
+    private long s1;
+    private long s2;
+    private long s3;
+    private long s4;
+    private long k0;
+    private long k1;
+    private long k2;
+    private long k3;
 
     private int h0;
     private int h1;
@@ -91,24 +91,40 @@ public class Poly1305Mac implements Mac {
         s3 = r3 * 5;
         s4 = r4 * 5;
 
-        k0 = unpackIntLE(key, 16);
-        k1 = unpackIntLE(key, 20);
-        k2 = unpackIntLE(key, 24);
-        k3 = unpackIntLE(key, 28);
+        k0 = unpackIntLE(key, 16) & 0xFFFF_FFFFL;
+        k1 = unpackIntLE(key, 20) & 0xFFFF_FFFFL;
+        k2 = unpackIntLE(key, 24) & 0xFFFF_FFFFL;
+        k3 = unpackIntLE(key, 28) & 0xFFFF_FFFFL;
+
+        currentBlockOffset = 0;
     }
 
     @Override
     public void update(byte[] in, int offset, int length) {
-        while (length > 0) {
-            if (currentBlockOffset == BLOCK_SIZE) {
-                processBlock();
-            }
-
+        if (currentBlockOffset > 0) {
+            // There is a partially filled block.
             int toCopy = Math.min(length, BLOCK_SIZE - currentBlockOffset);
             System.arraycopy(in, offset, currentBlock, currentBlockOffset, toCopy);
             offset += toCopy;
             length -= toCopy;
             currentBlockOffset += toCopy;
+            if (currentBlockOffset == BLOCK_SIZE) {
+                processBlock(currentBlock, 0, BLOCK_SIZE);
+                currentBlockOffset = 0;
+            }
+            if (length == 0) {
+                return;
+            }
+        }
+        while (length >= BLOCK_SIZE) {
+            processBlock(in, offset, BLOCK_SIZE);
+            offset += BLOCK_SIZE;
+            length -= BLOCK_SIZE;
+        }
+        if (length > 0) {
+            // Put remaining bytes into internal buffer (length < BLOCK_SIZE here).
+            System.arraycopy(in, offset, currentBlock, 0, length);
+            currentBlockOffset = length;
         }
     }
 
@@ -125,7 +141,14 @@ public class Poly1305Mac implements Mac {
             throw new BufferOverflowException();
         }
         if (currentBlockOffset > 0) {
-            processBlock();
+            if (currentBlockOffset < BLOCK_SIZE) {
+                // padding
+                currentBlock[currentBlockOffset] = 1;
+                for (int i = currentBlockOffset + 1; i < BLOCK_SIZE; i++) {
+                    currentBlock[i] = 0;
+                }
+            }
+            processBlock(currentBlock, 0, currentBlockOffset);
         }
 
         h1 += h0 >>> 26;
@@ -163,10 +186,10 @@ public class Poly1305Mac implements Mac {
         h3 = h3 & nb | g3 & b;
         h4 = h4 & nb | g4 & b;
 
-        long f0 = Integer.toUnsignedLong(h0 | h1 << 26) + Integer.toUnsignedLong(k0);
-        long f1 = Integer.toUnsignedLong(h1 >>> 6 | h2 << 20) + Integer.toUnsignedLong(k1);
-        long f2 = Integer.toUnsignedLong(h2 >>> 12 | h3 << 14) + Integer.toUnsignedLong(k2);
-        long f3 = Integer.toUnsignedLong(h3 >>> 18 | h4 << 8) + Integer.toUnsignedLong(k3);
+        long f0 = ((h0 | h1 << 26) & 0xFFFF_FFFFL) + k0;
+        long f1 = ((h1 >>> 6 | h2 << 20) & 0xFFFF_FFFFL) + k1;
+        long f2 = ((h2 >>> 12 | h3 << 14) & 0xFFFF_FFFFL) + k2;
+        long f3 = ((h3 >>> 18 | h4 << 8) & 0xFFFF_FFFFL) + k3;
 
         packIntLE((int) f0, out, offset);
         f1 += f0 >>> 32;
@@ -179,40 +202,35 @@ public class Poly1305Mac implements Mac {
         reset();
     }
 
-    private void processBlock() {
-        if (currentBlockOffset < BLOCK_SIZE) {
-            // padding
-            currentBlock[currentBlockOffset] = 1;
-            for (int i = currentBlockOffset + 1; i < BLOCK_SIZE; i++) {
-                currentBlock[i] = 0;
-            }
-        }
+    private void processBlock(byte[] block, int offset, int length) {
 
-        long t0 = Integer.toUnsignedLong(unpackIntLE(currentBlock, 0));
-        long t1 = Integer.toUnsignedLong(unpackIntLE(currentBlock, 4));
-        long t2 = Integer.toUnsignedLong(unpackIntLE(currentBlock, 8));
-        long t3 = Integer.toUnsignedLong(unpackIntLE(currentBlock, 12));
+        int t0 = unpackIntLE(block, offset);
+        int t1 = unpackIntLE(block, offset + 4);
+        int t2 = unpackIntLE(block, offset + 8);
+        int t3 = unpackIntLE(block, offset + 12);
 
         h0 += t0 & 0x3ffffff;
-        h1 += (t1 << 32 | t0) >>> 26 & 0x3ffffff;
-        h2 += (t2 << 32 | t1) >>> 20 & 0x3ffffff;
-        h3 += (t3 << 32 | t2) >>> 14 & 0x3ffffff;
+        h1 += (t0 >>> 26 | t1 << 6) & 0x3ffffff;
+        h2 += (t1 >>> 20 | t2 << 12) & 0x3ffffff;
+        h3 += (t2 >>> 14 | t3 << 18) & 0x3ffffff;
         h4 += t3 >>> 8;
 
-        if (currentBlockOffset == BLOCK_SIZE) {
+        if (length == BLOCK_SIZE) {
             h4 += 1 << 24;
         }
 
-        long tp0 = unsignedProduct(h0, r0) + unsignedProduct(h1, s4) + unsignedProduct(h2, s3) + unsignedProduct(h3, s2)
-                   + unsignedProduct(h4, s1);
-        long tp1 = unsignedProduct(h0, r1) + unsignedProduct(h1, r0) + unsignedProduct(h2, s4) + unsignedProduct(h3, s3)
-                   + unsignedProduct(h4, s2);
-        long tp2 = unsignedProduct(h0, r2) + unsignedProduct(h1, r1) + unsignedProduct(h2, r0) + unsignedProduct(h3, s4)
-                   + unsignedProduct(h4, s3);
-        long tp3 = unsignedProduct(h0, r3) + unsignedProduct(h1, r2) + unsignedProduct(h2, r1) + unsignedProduct(h3, r0)
-                   + unsignedProduct(h4, s4);
-        long tp4 = unsignedProduct(h0, r4) + unsignedProduct(h1, r3) + unsignedProduct(h2, r2) + unsignedProduct(h3, r1)
-                   + unsignedProduct(h4, r0);
+        // The high bits of h0 to h4 are guaranteed to be zero, so we can just let the compiler extend the ints.
+        // No need to do a & 0xFFFF_FFFFL.
+        long l0 = h0;
+        long l1 = h1;
+        long l2 = h2;
+        long l3 = h3;
+        long l4 = h4;
+        long tp0 = l0 * r0 + l1 * s4 + l2 * s3 + l3 * s2 + l4 * s1;
+        long tp1 = l0 * r1 + l1 * r0 + l2 * s4 + l3 * s3 + l4 * s2;
+        long tp2 = l0 * r2 + l1 * r1 + l2 * r0 + l3 * s4 + l4 * s3;
+        long tp3 = l0 * r3 + l1 * r2 + l2 * r1 + l3 * r0 + l4 * s4;
+        long tp4 = l0 * r4 + l1 * r3 + l2 * r2 + l3 * r1 + l4 * r0;
 
         h0 = (int) tp0 & 0x3ffffff;
         tp1 += tp0 >>> 26;
@@ -226,8 +244,6 @@ public class Poly1305Mac implements Mac {
         h0 += (int) (tp4 >>> 26) * 5;
         h1 += h0 >>> 26;
         h0 &= 0x3ffffff;
-
-        currentBlockOffset = 0;
     }
 
     private void reset() {
@@ -250,21 +266,18 @@ public class Poly1305Mac implements Mac {
         return BLOCK_SIZE;
     }
 
-    private static int unpackIntLE(byte[] buf, int off) {
-        int ret = 0;
-        for (int i = 0; i < Integer.BYTES; i++) {
-            ret |= Byte.toUnsignedInt(buf[off + i]) << i * Byte.SIZE;
-        }
+    public static int unpackIntLE(byte[] buf, int off) {
+        int ret = buf[off++] & 0xFF;
+        ret |= (buf[off++] & 0xFF) << 8;
+        ret |= (buf[off++] & 0xFF) << 16;
+        ret |= (buf[off] & 0xFF) << 24;
         return ret;
     }
 
-    private static void packIntLE(int value, byte[] dst, int off) {
-        for (int i = 0; i < Integer.BYTES; i++) {
-            dst[off + i] = (byte) (value >>> i * Byte.SIZE);
-        }
-    }
-
-    private static long unsignedProduct(int i1, int i2) {
-        return Integer.toUnsignedLong(i1) * Integer.toUnsignedLong(i2);
+    public static void packIntLE(int value, byte[] dst, int off) {
+        dst[off++] = (byte) value;
+        dst[off++] = (byte) (value >> 8);
+        dst[off++] = (byte) (value >> 16);
+        dst[off] = (byte) (value >> 24);
     }
 }

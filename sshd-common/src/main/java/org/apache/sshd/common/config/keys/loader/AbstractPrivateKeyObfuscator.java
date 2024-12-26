@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
 import java.util.Objects;
@@ -34,6 +33,7 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.apache.sshd.common.digest.BuiltinDigests;
+import org.apache.sshd.common.random.JceRandom;
 import org.apache.sshd.common.util.GenericUtils;
 import org.apache.sshd.common.util.ValidateUtils;
 import org.apache.sshd.common.util.buffer.BufferUtils;
@@ -59,7 +59,7 @@ public abstract class AbstractPrivateKeyObfuscator implements PrivateKeyObfuscat
             throws GeneralSecurityException {
         int ivSize = resolveInitializationVectorLength(encContext);
         byte[] initVector = new byte[ivSize];
-        Random randomizer = new SecureRandom(); // TODO consider using some pre-created singleton instance
+        Random randomizer = JceRandom.getGlobalInstance();
         randomizer.nextBytes(initVector);
         return initVector;
     }
@@ -102,7 +102,7 @@ public abstract class AbstractPrivateKeyObfuscator implements PrivateKeyObfuscat
         byte[] initVector = Objects.requireNonNull(encContext.getInitVector(), "No encryption init vector");
         ValidateUtils.checkTrue(initVector.length > 0, "Empty encryption init vector");
 
-        String password = ValidateUtils.checkNotNullAndNotEmpty(encContext.getPassword(), "No encryption password");
+        String password = ValidateUtils.hasContent(encContext.getPassword(), "No encryption password");
         byte[] passBytes = password.getBytes(StandardCharsets.UTF_8);
         byte[] prevHash = GenericUtils.EMPTY_BYTE_ARRAY;
         try {

@@ -36,6 +36,7 @@ import org.apache.sshd.common.NamedResource;
 import org.apache.sshd.common.cipher.ECCurves;
 import org.apache.sshd.common.config.NamedResourceListParseResult;
 import org.apache.sshd.common.digest.BuiltinDigests;
+import org.apache.sshd.common.digest.Digest;
 import org.apache.sshd.common.util.GenericUtils;
 import org.apache.sshd.common.util.ValidateUtils;
 import org.apache.sshd.common.util.security.SecurityUtils;
@@ -252,26 +253,30 @@ public enum BuiltinDHFactories implements DHFactory {
             if (!GenericUtils.isEmpty(params)) {
                 throw new IllegalArgumentException("No accepted parameters for " + getName());
             }
-            return new XDH(MontgomeryCurve.x25519);
+            return new XDH(MontgomeryCurve.x25519, false) {
+
+                @Override
+                public Digest getHash() throws Exception {
+                    return BuiltinDigests.sha256.create();
+                }
+
+            };
         }
 
         @Override
         public boolean isSupported() {
-            return MontgomeryCurve.x25519.isSupported();
+            return MontgomeryCurve.x25519.isSupported() && BuiltinDigests.sha256.isSupported();
         }
     },
     curve25519_libssh(Constants.CURVE25519_SHA256_LIBSSH) {
         @Override
-        public XDH create(Object... params) throws Exception {
-            if (!GenericUtils.isEmpty(params)) {
-                throw new IllegalArgumentException("No accepted parameters for " + getName());
-            }
-            return new XDH(MontgomeryCurve.x25519);
+        public AbstractDH create(Object... params) throws Exception {
+            return curve25519.create(params);
         }
 
         @Override
         public boolean isSupported() {
-            return MontgomeryCurve.x25519.isSupported();
+            return curve25519.isSupported();
         }
     },
     /**
@@ -283,12 +288,143 @@ public enum BuiltinDHFactories implements DHFactory {
             if (!GenericUtils.isEmpty(params)) {
                 throw new IllegalArgumentException("No accepted parameters for " + getName());
             }
-            return new XDH(MontgomeryCurve.x448);
+            return new XDH(MontgomeryCurve.x448, false) {
+
+                @Override
+                public Digest getHash() throws Exception {
+                    return BuiltinDigests.sha512.create();
+                }
+            };
         }
 
         @Override
         public boolean isSupported() {
-            return MontgomeryCurve.x448.isSupported();
+            return MontgomeryCurve.x448.isSupported() && BuiltinDigests.sha512.isSupported();
+        }
+    },
+    /**
+     * @see <a href= "https://datatracker.ietf.org/doc/html/draft-kampanakis-curdle-ssh-pq-ke-04">PQ/T Hybrid Key
+     *      Exchange in SSH</a>
+     */
+    mlkem768x25519(Constants.MLKEM768_25519_SHA256) {
+        @Override
+        public XDH create(Object... params) throws Exception {
+            if (!GenericUtils.isEmpty(params)) {
+                throw new IllegalArgumentException("No accepted parameters for " + getName());
+            }
+            return new XDH(MontgomeryCurve.x25519, true) {
+
+                @Override
+                public KeyEncapsulationMethod getKeyEncapsulation() {
+                    return BuiltinKEM.mlkem768;
+                }
+
+                @Override
+                public Digest getHash() throws Exception {
+                    return BuiltinDigests.sha256.create();
+                }
+            };
+        }
+
+        @Override
+        public boolean isSupported() {
+            return MontgomeryCurve.x25519.isSupported() && BuiltinDigests.sha256.isSupported()
+                    && BuiltinKEM.mlkem768.isSupported();
+        }
+    },
+    /**
+     * @see <a href= "https://datatracker.ietf.org/doc/html/draft-kampanakis-curdle-ssh-pq-ke-04">PQ/T Hybrid Key
+     *      Exchange in SSH</a>
+     */
+    mlkem768nistp256(Constants.MLKEM768_NISTP256_SHA256) {
+        @Override
+        public ECDH create(Object... params) throws Exception {
+            if (!GenericUtils.isEmpty(params)) {
+                throw new IllegalArgumentException("No accepted parameters for " + getName());
+            }
+            return new ECDH(ECCurves.nistp256, true) {
+
+                @Override
+                public KeyEncapsulationMethod getKeyEncapsulation() {
+                    return BuiltinKEM.mlkem768;
+                }
+
+            };
+        }
+
+        @Override
+        public boolean isSupported() {
+            return ECCurves.nistp256.isSupported() && BuiltinKEM.mlkem768.isSupported();
+        }
+    },
+    /**
+     * @see <a href= "https://datatracker.ietf.org/doc/html/draft-kampanakis-curdle-ssh-pq-ke-04">PQ/T Hybrid Key
+     *      Exchange in SSH</a>
+     */
+    mlkem1024nistp384(Constants.MLKEM1024_NISTP384_SHA384) {
+        @Override
+        public ECDH create(Object... params) throws Exception {
+            if (!GenericUtils.isEmpty(params)) {
+                throw new IllegalArgumentException("No accepted parameters for " + getName());
+            }
+            return new ECDH(ECCurves.nistp384, true) {
+
+                @Override
+                public KeyEncapsulationMethod getKeyEncapsulation() {
+                    return BuiltinKEM.mlkem1024;
+                }
+
+            };
+        }
+
+        @Override
+        public boolean isSupported() {
+            return ECCurves.nistp384.isSupported() && BuiltinKEM.mlkem1024.isSupported();
+        }
+    },
+    /**
+     * @see <a href=
+     *      "https://www.ietf.org/archive/id/draft-josefsson-ntruprime-ssh-02.html">draft-josefsson-ntruprime-ssh-02.html</a>
+     */
+    sntrup761x25519(Constants.SNTRUP761_25519_SHA512) {
+        @Override
+        public XDH create(Object... params) throws Exception {
+            if (!GenericUtils.isEmpty(params)) {
+                throw new IllegalArgumentException("No accepted parameters for " + getName());
+            }
+            return new XDH(MontgomeryCurve.x25519, true) {
+
+                @Override
+                public KeyEncapsulationMethod getKeyEncapsulation() {
+                    return BuiltinKEM.sntrup761;
+                }
+
+                @Override
+                public Digest getHash() throws Exception {
+                    return BuiltinDigests.sha512.create();
+                }
+            };
+        }
+
+        @Override
+        public boolean isSupported() {
+            return MontgomeryCurve.x25519.isSupported() && BuiltinDigests.sha512.isSupported()
+                    && BuiltinKEM.sntrup761.isSupported();
+        }
+    },
+    /**
+     * @see <a href=
+     *      "https://www.ietf.org/archive/id/draft-josefsson-ntruprime-ssh-02.html">draft-josefsson-ntruprime-ssh-02.html</a>
+     */
+    sntrup761x25519_openssh(Constants.SNTRUP761_25519_SHA512_OPENSSH) {
+        @Override
+        public AbstractDH create(Object... params) throws Exception {
+            return sntrup761x25519.create(params);
+        }
+
+        @Override
+        public boolean isSupported() {
+            return sntrup761x25519.isSupported();
         }
     };
 
@@ -466,8 +602,13 @@ public enum BuiltinDHFactories implements DHFactory {
         public static final String ECDH_SHA2_NISTP384 = "ecdh-sha2-nistp384";
         public static final String ECDH_SHA2_NISTP521 = "ecdh-sha2-nistp521";
         public static final String CURVE25519_SHA256 = "curve25519-sha256";
-        public static final String CURVE25519_SHA256_LIBSSH = "curve25519-sha256@libssh.org";
+        public static final String CURVE25519_SHA256_LIBSSH = CURVE25519_SHA256 + "@libssh.org";
         public static final String CURVE448_SHA512 = "curve448-sha512";
+        public static final String MLKEM768_25519_SHA256 = "mlkem768x25519-sha256";
+        public static final String MLKEM768_NISTP256_SHA256 = "mlkem768nistp256-sha256";
+        public static final String MLKEM1024_NISTP384_SHA384 = "mlkem1024nistp384-sha384";
+        public static final String SNTRUP761_25519_SHA512 = "sntrup761x25519-sha512";
+        public static final String SNTRUP761_25519_SHA512_OPENSSH = SNTRUP761_25519_SHA512 + "@openssh.com";
 
         private Constants() {
             throw new UnsupportedOperationException("No instance allowed");

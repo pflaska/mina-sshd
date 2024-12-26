@@ -100,7 +100,6 @@ import org.apache.sshd.sftp.client.SftpClientFactory;
 import org.apache.sshd.sftp.client.SftpErrorDataHandler;
 import org.apache.sshd.sftp.client.SftpVersionSelector;
 import org.apache.sshd.sftp.client.extensions.CopyFileExtension;
-import org.apache.sshd.sftp.client.impl.SftpPathImpl;
 import org.apache.sshd.sftp.client.impl.SftpRemotePathChannel;
 import org.apache.sshd.sftp.common.SftpConstants;
 import org.apache.sshd.sftp.common.SftpException;
@@ -616,16 +615,25 @@ public class SftpFileSystemProvider extends FileSystemProvider {
         modes = EnumSet.of(OpenMode.Read);
         SftpPath p = toSftpPath(path);
         SftpClient client = p.getFileSystem().getClient();
-        return new FilterInputStream(client.read(p.toString(), modes)) {
-            @Override
-            public void close() throws IOException {
-                try {
-                    super.close();
-                } finally {
-                    client.close();
+        try {
+            SftpClient inner = client;
+            InputStream result = new FilterInputStream(client.read(p.toString(), modes)) {
+                @Override
+                public void close() throws IOException {
+                    try {
+                        super.close();
+                    } finally {
+                        inner.close();
+                    }
                 }
+            };
+            client = null; // Prevent closing in finally
+            return result;
+        } finally {
+            if (client != null) {
+                client.close();
             }
-        };
+        }
     }
 
     @Override
@@ -648,22 +656,31 @@ public class SftpFileSystemProvider extends FileSystemProvider {
         }
         SftpPath p = toSftpPath(path);
         SftpClient client = p.getFileSystem().getClient();
-        return new FilterOutputStream(client.write(p.toString(), modes)) {
+        try {
+            SftpClient inner = client;
+            OutputStream result = new FilterOutputStream(client.write(p.toString(), modes)) {
 
-            @Override
-            public void close() throws IOException {
-                try {
-                    super.close();
-                } finally {
-                    client.close();
+                @Override
+                public void close() throws IOException {
+                    try {
+                        super.close();
+                    } finally {
+                        inner.close();
+                    }
                 }
-            }
 
-            @Override
-            public void write(byte[] b, int off, int len) throws IOException {
-                out.write(b, off, len);
+                @Override
+                public void write(byte[] b, int off, int len) throws IOException {
+                    out.write(b, off, len);
+                }
+            };
+            client = null; // Prevent closing in finally
+            return result;
+        } finally {
+            if (client != null) {
+                client.close();
             }
-        };
+        }
     }
 
     @Override
@@ -1099,7 +1116,7 @@ public class SftpFileSystemProvider extends FileSystemProvider {
         // SftpPathImpl.withAttributeCache() invocation. So we ensure here that if we are already within a caching
         // scope, we do use the cached attributes, but if we are not, we clear any possibly cached attributes and
         // do actually read them from the remote.
-        return SftpPathImpl.withAttributeCache(path, p -> resolveRemoteFileAttributes(path, options));
+        return WithFileAttributeCache.withAttributeCache(path, p -> resolveRemoteFileAttributes(path, options));
     }
 
     protected SftpClient.Attributes resolveRemoteFileAttributes(SftpPath path, LinkOption... options) throws IOException {
@@ -1118,8 +1135,8 @@ public class SftpFileSystemProvider extends FileSystemProvider {
             if (log.isTraceEnabled()) {
                 log.trace("resolveRemoteFileAttributes({})[{}]: {}", fs, path, attrs);
             }
-            if (path instanceof SftpPathImpl) {
-                ((SftpPathImpl) path).cacheAttributes(attrs);
+            if (path instanceof WithFileAttributeCache) {
+                ((WithFileAttributeCache) path).setAttributes(attrs);
             }
             return attrs;
         } catch (SftpException e) {
@@ -1550,7 +1567,7 @@ public class SftpFileSystemProvider extends FileSystemProvider {
     }
 
     public static String encodeCredentials(String username, String password) {
-        ValidateUtils.checkNotNullAndNotEmpty(username, "No username provided");
+        ValidateUtils.hasContent(username, "No username provided");
 
         /*
          * There is no way to properly encode/decode credentials that already contain colon. See also

@@ -358,6 +358,12 @@ public abstract class AbstractChannel extends AbstractInnerCloseable implements 
      */
     protected RequestHandler.Result handleInternalRequest(String req, boolean wantReply, Buffer buffer)
             throws IOException {
+        if (req.startsWith("keepalive@") || req.startsWith("keep-alive@")) {
+            if (log.isDebugEnabled()) {
+                log.debug("handleInternalRequest({})[want-reply={}] received keep-alive: {}", this, wantReply, req);
+            }
+            return RequestHandler.Result.ReplySuccess;
+        }
         if (log.isDebugEnabled()) {
             log.debug("handleInternalRequest({})[want-reply={}] unknown type: {}", this, wantReply, req);
         }
@@ -914,7 +920,7 @@ public abstract class AbstractChannel extends AbstractInnerCloseable implements 
     /**
      * Sets a {@link PacketValidator}.
      *
-     * @param the validator to set, if {@code null} the {@link #DEFAULT_PACKET_VALIDATOR} is set
+     * @param validator the validator to set, if {@code null} the {@link #DEFAULT_PACKET_VALIDATOR} is set
      */
     public void setPacketValidator(PacketValidator validator) {
         if (validator == null) {
@@ -991,6 +997,7 @@ public abstract class AbstractChannel extends AbstractInnerCloseable implements 
         }
 
         AbstractIoWriteFuture eofWritten = new AbstractIoWriteFuture(getChannelId(), futureLock) {
+            // Nothin extra
         };
         if (!eofFuture.compareAndSet(null, eofWritten)) {
             if (log.isDebugEnabled()) {

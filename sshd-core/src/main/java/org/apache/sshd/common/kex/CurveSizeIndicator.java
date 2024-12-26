@@ -16,33 +16,17 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
-package org.apache.sshd.util.test;
-
-import org.junit.runners.model.InitializationError;
-import org.junit.runners.parameterized.BlockJUnit4ClassRunnerWithParameters;
-import org.junit.runners.parameterized.TestWithParameters;
+package org.apache.sshd.common.kex;
 
 /**
- * Uses a cached created instance instead of a new one on every call of {@code #createTest()}
- *
  * @author <a href="mailto:dev@mina.apache.org">Apache MINA SSHD Project</a>
  */
-public class JUnit4ClassRunnerWithParameters extends BlockJUnit4ClassRunnerWithParameters {
-    private volatile Object testInstance;
+public interface CurveSizeIndicator {
 
-    public JUnit4ClassRunnerWithParameters(TestWithParameters test) throws InitializationError {
-        super(test);
-    }
-
-    @Override
-    public Object createTest() throws Exception {
-        synchronized (this) {
-            if (testInstance == null) {
-                testInstance = super.createTest();
-            }
-        }
-
-        return testInstance;
-    }
+    /**
+     * Retrieves the length of a point coordinate in bytes.
+     *
+     * @return the length
+     */
+    int getByteLength();
 }

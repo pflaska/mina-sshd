@@ -138,14 +138,13 @@ public final class CoreModuleProperties {
             = Property.bool("allow-dhg1-kex-fallback", false);
 
     /**
-     * If the peer initiates a key exchange, we send our own KEX_INIT message with the proposal. This is a last-resort
-     * timeout for waiting until we have prepared our own KEX proposal. This timeout should actually never be hit unless
-     * there is a serious deadlock somewhere and the session is never closed. It should be set to a reasonably high
-     * value; it must be at least 5 seconds and the default is 42 seconds. If the timeout is ever hit, the key exchange
-     * initiated by the peer will fail.
+     * Unused.
+     *
+     * @deprecated since 2.14.0
      */
+    @Deprecated
     public static final Property<Duration> KEX_PROPOSAL_SETUP_TIMEOUT
-            = Property.durationSec("kex-proposal-setup-timeout", Duration.ofSeconds(42), Duration.ofSeconds(5));
+            = Property.duration("kex-proposal-setup-timeout", Duration.ZERO);
 
     /**
      * Key used to set the heartbeat interval in milliseconds (0 to disable = default)
@@ -162,9 +161,22 @@ public final class CoreModuleProperties {
     /**
      * Key used to indicate that the heartbeat request is also expecting a reply - time in <U>milliseconds</U> to wait
      * for the reply. If non-positive then no reply is expected (nor requested).
+     *
+     * @deprecated since 2.13.0, use {@link #HEARTBEAT_NO_REPLY_MAX} instead
      */
+    @Deprecated
     public static final Property<Duration> HEARTBEAT_REPLY_WAIT
             = Property.durationSec("heartbeat-reply-wait", Duration.ofMinutes(5));
+
+    /**
+     * Key to set the maximum number of heartbeat messages to send without having received a reply. If &gt; 0, heartbeat
+     * messages are sent with a flag that requires the peer to reply. The session will be killed if
+     * {@code HEARTBEAT_NO_REPLY_MAX} heartbeats have been sent without having received a reply. If &lt;= 0, heartbeat
+     * messages will be sent, but no reply is requested or expected, and the client will not kill the session.
+     *
+     * @since 2.13.0
+     */
+    public static final Property<Integer> HEARTBEAT_NO_REPLY_MAX = Property.integer("heartbeat-no-reply-max", 0);
 
     /**
      * Whether to ignore invalid identities files when pre-initializing the client session
@@ -775,6 +787,17 @@ public final class CoreModuleProperties {
      */
     public static final Property<String> X11_BIND_HOST
             = Property.string("x11-fwd-bind-host", SshdSocketAddress.LOCALHOST_IPV4);
+
+    /**
+     * Configuration value for the maximum number of proxy jumps to allow in an SSH connection; by default 10. If there
+     * are more proxy jumps for an SSH connection, chances are that the proxy chain has a loop.
+     */
+    public static final Property<Integer> MAX_PROXY_JUMPS = Property.validating(Property.integer("max-proxy-jumps", 10), p -> {
+        if (p != null) {
+            ValidateUtils.checkTrue(p.intValue() > 0, "Maximum number of proxy jumps allowed must be greater than zero, is %d",
+                    p);
+        }
+    });
 
     private CoreModuleProperties() {
         throw new UnsupportedOperationException("No instance");

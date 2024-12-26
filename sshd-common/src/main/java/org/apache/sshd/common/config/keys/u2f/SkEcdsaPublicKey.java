@@ -19,6 +19,9 @@
 package org.apache.sshd.common.config.keys.u2f;
 
 import java.security.interfaces.ECPublicKey;
+import java.util.Objects;
+
+import org.apache.sshd.common.config.keys.impl.SkECDSAPublicKeyEntryDecoder;
 
 public class SkEcdsaPublicKey implements SecurityKeyPublicKey<ECPublicKey> {
 
@@ -39,6 +42,11 @@ public class SkEcdsaPublicKey implements SecurityKeyPublicKey<ECPublicKey> {
     @Override
     public String getAlgorithm() {
         return ALGORITHM;
+    }
+
+    @Override
+    public String getKeyType() {
+        return SkECDSAPublicKeyEntryDecoder.KEY_TYPE;
     }
 
     @Override
@@ -73,5 +81,28 @@ public class SkEcdsaPublicKey implements SecurityKeyPublicKey<ECPublicKey> {
                + ", noTouchRequired=" + isNoTouchRequired()
                + ", delegatePublicKey=" + getDelegatePublicKey()
                + "]";
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(appName, noTouchRequired, delegatePublicKey);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == null) {
+            return false;
+        }
+        if (this == obj) {
+            return true;
+        }
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+
+        SkEcdsaPublicKey other = (SkEcdsaPublicKey) obj;
+        return Objects.equals(this.appName, other.appName)
+                && this.noTouchRequired == other.noTouchRequired
+                && Objects.equals(this.delegatePublicKey, other.delegatePublicKey);
     }
 }

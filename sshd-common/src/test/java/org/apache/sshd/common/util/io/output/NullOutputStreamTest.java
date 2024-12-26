@@ -24,57 +24,40 @@ import java.io.IOException;
 import java.util.Arrays;
 
 import org.apache.sshd.util.test.JUnitTestSupport;
-import org.apache.sshd.util.test.NoIoTestCase;
-import org.junit.FixMethodOrder;
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
-import org.junit.runners.MethodSorters;
+import org.junit.jupiter.api.MethodOrderer.MethodName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * @author <a href="mailto:dev@mina.apache.org">Apache MINA SSHD Project</a>
  */
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
-@Category({ NoIoTestCase.class })
+@TestMethodOrder(MethodName.class)
+@Tag("NoIoTestCase")
 public class NullOutputStreamTest extends JUnitTestSupport {
     public NullOutputStreamTest() {
         super();
     }
 
     @Test
-    public void testNoAccessAllowedAfterClose() throws IOException {
+    void noAccessAllowedAfterClose() throws IOException {
         NullOutputStream stream = new NullOutputStream();
         stream.close();
-        assertFalse("Stream not marked as closed", stream.isOpen());
-
-        try {
-            stream.write('a');
-            fail("Unexpected single value write success");
-        } catch (EOFException e) {
-            // expected
-        }
+        assertFalse(stream.isOpen(), "Stream not marked as closed");
+        assertThrows(EOFException.class, () -> stream.write('a'), "Unexpected single value write success");
 
         byte[] buf = new byte[Byte.SIZE];
-        try {
-            Arrays.fill(buf, (byte) 0x41);
-            stream.write(buf);
-            fail("Unexpected full buffer write success");
-        } catch (EOFException e) {
-            // expected
-        }
+        Arrays.fill(buf, (byte) 0x41);
+        assertThrows(EOFException.class, () -> stream.write(buf), "Unexpected full buffer write success");
 
-        try {
-            Arrays.fill(buf, (byte) 0x42);
-            stream.write(buf, buf.length / 2, (buf.length / 2) - 1);
-            fail("Unexpected partial buffer write success");
-        } catch (EOFException e) {
-            // expected
-        }
+        Arrays.fill(buf, (byte) 0x42);
+        assertThrows(EOFException.class,
+                () -> stream.write(buf, buf.length / 2, (buf.length / 2) - 1),
+                "Unexpected full buffer write success");
 
-        try {
-            stream.flush();
-            fail("Unexpected flush success");
-        } catch (EOFException e) {
-            // expected
-        }
+        assertThrows(EOFException.class, stream::flush, "Unexpected flush success");
     }
 }

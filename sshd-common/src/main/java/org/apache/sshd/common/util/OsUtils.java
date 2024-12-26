@@ -224,7 +224,8 @@ public final class OsUtils {
             }
 
             for (String p : detectionProps) {
-                if (detector.test(p)) {
+                String detectionPropValue = System.getProperty(p);
+                if (detector.test(detectionPropValue)) {
                     flagHolder.set(Boolean.TRUE);
                     return true;
                 }
@@ -326,7 +327,7 @@ public final class OsUtils {
             }
 
             username = getCanonicalUser(System.getProperty(CURRENT_USER_OVERRIDE_PROP, System.getProperty("user.name")));
-            ValidateUtils.checkNotNullAndNotEmpty(username, "No username available");
+            ValidateUtils.hasContent(username, "No username available");
             CURRENT_USER_HOLDER.set(username);
         }
 

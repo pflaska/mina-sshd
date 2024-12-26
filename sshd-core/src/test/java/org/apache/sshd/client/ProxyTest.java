@@ -28,39 +28,50 @@ import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.rmi.RemoteException;
 import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.sshd.client.config.hosts.HostConfigEntry;
 import org.apache.sshd.client.config.hosts.KnownHostHashValue;
+import org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier;
 import org.apache.sshd.client.keyverifier.KnownHostsServerKeyVerifier;
 import org.apache.sshd.client.keyverifier.RejectAllServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.config.keys.PublicKeyEntry;
+import org.apache.sshd.common.session.Session;
 import org.apache.sshd.common.util.GenericUtils;
+import org.apache.sshd.common.util.net.SshdSocketAddress;
 import org.apache.sshd.server.SshServer;
 import org.apache.sshd.server.forward.AcceptAllForwardingFilter;
+import org.apache.sshd.server.forward.StaticDecisionForwardingFilter;
 import org.apache.sshd.util.test.BaseTestSupport;
 import org.apache.sshd.util.test.CommandExecutionHelper;
-import org.junit.FixMethodOrder;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runners.MethodSorters;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.MethodOrderer.MethodName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * @author <a href="mailto:dev@mina.apache.org">Apache MINA SSHD Project</a>
  */
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+@TestMethodOrder(MethodName.class)
 public class ProxyTest extends BaseTestSupport {
 
-    @Rule
-    public TemporaryFolder tmpClientDir = new TemporaryFolder();
-
     protected final Logger logger = LoggerFactory.getLogger(getClass());
+
+    @TempDir
+    private File tmpClientDir;
 
     private ClientSession proxySession;
 
@@ -69,7 +80,7 @@ public class ProxyTest extends BaseTestSupport {
     }
 
     @Test
-    public void testProxy() throws Exception {
+    void proxy() throws Exception {
         try (SshServer server = setupTestServer();
              SshServer proxy = setupTestServer();
              SshClient client = setupTestClient()) {
@@ -107,7 +118,7 @@ public class ProxyTest extends BaseTestSupport {
     }
 
     @Test
-    public void testDirectWithHostKeyVerification() throws Exception {
+    void directWithHostKeyVerification() throws Exception {
         // This test exists only to show that the knownhosts setup is correct
         try (SshServer server = setupTestServer();
              SshServer proxy = setupTestServer();
@@ -141,7 +152,7 @@ public class ProxyTest extends BaseTestSupport {
     }
 
     @Test
-    public void testProxyWithHostKeyVerification() throws Exception {
+    void proxyWithHostKeyVerification() throws Exception {
         try (SshServer server = setupTestServer();
              SshServer proxy = setupTestServer();
              SshClient client = setupTestClient()) {
@@ -169,7 +180,7 @@ public class ProxyTest extends BaseTestSupport {
     }
 
     @Test
-    public void testProxyWithHostKeyVerificationAndCustomConfig() throws Exception {
+    void proxyWithHostKeyVerificationAndCustomConfig() throws Exception {
         try (SshServer server = setupTestServer();
              SshServer proxy = setupTestServer();
              SshClient client = setupTestClient()) {
@@ -201,8 +212,255 @@ public class ProxyTest extends BaseTestSupport {
     }
 
     @Test
-    @Ignore
-    public void testExternal() throws Exception {
+    void proxyChain() throws Exception {
+        try (SshServer target = setupTestServer();
+             SshServer proxy1 = setupTestServer();
+             SshServer proxy2 = setupTestServer();
+             SshClient client = setupTestClient()) {
+            target.setCommandFactory((session, command) -> new CommandExecutionHelper(command) {
+                @Override
+                protected boolean handleCommandLine(String command) throws Exception {
+                    OutputStream stdout = getOutputStream();
+                    stdout.write(command.getBytes(StandardCharsets.US_ASCII));
+                    stdout.flush();
+                    return false;
+                }
+            });
+
+            client.setServerKeyVerifier(AcceptAllServerKeyVerifier.INSTANCE);
+            KeyPair kp = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+            client.setKeyIdentityProvider(s -> {
+                return Collections.singletonList(kp);
+            });
+            target.setPublickeyAuthenticator((u, k, s) -> "userT".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            proxy1.setPublickeyAuthenticator((u, k, s) -> "user1".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            proxy2.setPublickeyAuthenticator((u, k, s) -> "user2".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            int[] forwarded = new int[2];
+            proxy1.setForwardingFilter(new StaticDecisionForwardingFilter(true) {
+
+                @Override
+                protected boolean checkAcceptance(String request, Session session, SshdSocketAddress target) {
+                    forwarded[0] = target.getPort();
+                    return super.checkAcceptance(request, session, target);
+                }
+            });
+            proxy2.setForwardingFilter(new StaticDecisionForwardingFilter(true) {
+
+                @Override
+                protected boolean checkAcceptance(String request, Session session, SshdSocketAddress target) {
+                    forwarded[1] = target.getPort();
+                    return super.checkAcceptance(request, session, target);
+                }
+            });
+            target.start();
+            proxy1.start();
+            proxy2.start();
+            client.setHostConfigEntryResolver(HostConfigEntry.toHostConfigEntryResolver(
+                    Arrays.asList(new HostConfigEntry("target", "localhost", target.getPort(), "userT", "proxy2, proxy1"),
+                            new HostConfigEntry("proxy1", "localhost", proxy1.getPort(), "user1"),
+                            new HostConfigEntry("proxy2", "localhost", proxy2.getPort(), "user2"))));
+            client.start();
+            try (ClientSession session = client.connect("target").verify(CONNECT_TIMEOUT).getSession()) {
+                session.auth().verify(AUTH_TIMEOUT);
+
+                assertTrue(session.isOpen());
+                doTestCommand(session, "ls -la");
+            }
+            assertEquals(proxy2.getPort(), forwarded[0]);
+            assertEquals(target.getPort(), forwarded[1]);
+        }
+    }
+
+    @Test
+    void proxyCascade() throws Exception {
+        try (SshServer target = setupTestServer();
+             SshServer proxy1 = setupTestServer();
+             SshServer proxy2 = setupTestServer();
+             SshClient client = setupTestClient()) {
+            target.setCommandFactory((session, command) -> new CommandExecutionHelper(command) {
+                @Override
+                protected boolean handleCommandLine(String command) throws Exception {
+                    OutputStream stdout = getOutputStream();
+                    stdout.write(command.getBytes(StandardCharsets.US_ASCII));
+                    stdout.flush();
+                    return false;
+                }
+            });
+
+            client.setServerKeyVerifier(AcceptAllServerKeyVerifier.INSTANCE);
+            KeyPair kp = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+            client.setKeyIdentityProvider(s -> {
+                return Collections.singletonList(kp);
+            });
+            target.setPublickeyAuthenticator((u, k, s) -> "userT".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            proxy1.setPublickeyAuthenticator((u, k, s) -> "user1".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            proxy2.setPublickeyAuthenticator((u, k, s) -> "user2".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            int[] forwarded = new int[2];
+            proxy1.setForwardingFilter(new StaticDecisionForwardingFilter(true) {
+
+                @Override
+                protected boolean checkAcceptance(String request, Session session, SshdSocketAddress target) {
+                    forwarded[0] = target.getPort();
+                    return super.checkAcceptance(request, session, target);
+                }
+            });
+            proxy2.setForwardingFilter(new StaticDecisionForwardingFilter(true) {
+
+                @Override
+                protected boolean checkAcceptance(String request, Session session, SshdSocketAddress target) {
+                    forwarded[1] = target.getPort();
+                    return super.checkAcceptance(request, session, target);
+                }
+            });
+            target.start();
+            proxy1.start();
+            proxy2.start();
+            client.setHostConfigEntryResolver(HostConfigEntry.toHostConfigEntryResolver(
+                    Arrays.asList(new HostConfigEntry("target", "localhost", target.getPort(), "userT", "proxy2"),
+                            new HostConfigEntry("proxy1", "localhost", proxy1.getPort(), "user1"),
+                            new HostConfigEntry("proxy2", "localhost", proxy2.getPort(), "user2", "proxy1"))));
+            client.start();
+            try (ClientSession session = client.connect("target").verify(CONNECT_TIMEOUT).getSession()) {
+                session.auth().verify(AUTH_TIMEOUT);
+
+                assertTrue(session.isOpen());
+                doTestCommand(session, "ls -la");
+            }
+            assertEquals(proxy2.getPort(), forwarded[0]);
+            assertEquals(target.getPort(), forwarded[1]);
+        }
+    }
+
+    @Test
+    void proxyInfinite() throws Exception {
+        try (SshServer target = setupTestServer();
+             SshServer proxy1 = setupTestServer();
+             SshServer proxy2 = setupTestServer();
+             SshClient client = setupTestClient()) {
+            target.setCommandFactory((session, command) -> new CommandExecutionHelper(command) {
+                @Override
+                protected boolean handleCommandLine(String command) throws Exception {
+                    OutputStream stdout = getOutputStream();
+                    stdout.write(command.getBytes(StandardCharsets.US_ASCII));
+                    stdout.flush();
+                    return false;
+                }
+            });
+
+            client.setServerKeyVerifier(AcceptAllServerKeyVerifier.INSTANCE);
+            KeyPair kp = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+            client.setKeyIdentityProvider(s -> {
+                return Collections.singletonList(kp);
+            });
+            target.setPublickeyAuthenticator((u, k, s) -> "userT".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            proxy1.setPublickeyAuthenticator((u, k, s) -> "user1".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            proxy2.setPublickeyAuthenticator((u, k, s) -> "user2".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            int[] forwarded = new int[2];
+            proxy1.setForwardingFilter(new StaticDecisionForwardingFilter(true) {
+
+                @Override
+                protected boolean checkAcceptance(String request, Session session, SshdSocketAddress target) {
+                    forwarded[0] = target.getPort();
+                    return super.checkAcceptance(request, session, target);
+                }
+            });
+            proxy2.setForwardingFilter(new StaticDecisionForwardingFilter(true) {
+
+                @Override
+                protected boolean checkAcceptance(String request, Session session, SshdSocketAddress target) {
+                    forwarded[1] = target.getPort();
+                    return super.checkAcceptance(request, session, target);
+                }
+            });
+            target.start();
+            proxy1.start();
+            proxy2.start();
+            client.setHostConfigEntryResolver(HostConfigEntry.toHostConfigEntryResolver(
+                    Arrays.asList(new HostConfigEntry("target", "localhost", target.getPort(), "userT", "proxy2"),
+                            new HostConfigEntry("proxy1", "localhost", proxy1.getPort(), "user1", "proxy2"),
+                            new HostConfigEntry("proxy2", "localhost", proxy2.getPort(), "user2", "proxy1"))));
+            client.start();
+            Exception e = assertThrows(Exception.class, () -> {
+                try (ClientSession session = client.connect("target").verify(CONNECT_TIMEOUT).getSession()) {
+                    // Nothing
+                }
+            });
+            // One exception should have a message "Too many proxy jumps"
+            Throwable t = e;
+            while (t != null) {
+                if (t.getMessage().contains("Too many proxy jumps")) {
+                    break;
+                }
+                t = t.getCause();
+            }
+            assertNotNull(t);
+        }
+    }
+
+    @Test
+    void proxyOverride() throws Exception {
+        try (SshServer target = setupTestServer();
+             SshServer proxy1 = setupTestServer();
+             SshServer proxy2 = setupTestServer();
+             SshClient client = setupTestClient()) {
+            target.setCommandFactory((session, command) -> new CommandExecutionHelper(command) {
+                @Override
+                protected boolean handleCommandLine(String command) throws Exception {
+                    OutputStream stdout = getOutputStream();
+                    stdout.write(command.getBytes(StandardCharsets.US_ASCII));
+                    stdout.flush();
+                    return false;
+                }
+            });
+
+            client.setServerKeyVerifier(AcceptAllServerKeyVerifier.INSTANCE);
+            KeyPair kp = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+            client.setKeyIdentityProvider(s -> {
+                return Collections.singletonList(kp);
+            });
+            target.setPublickeyAuthenticator((u, k, s) -> "userT".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            proxy1.setPublickeyAuthenticator((u, k, s) -> "user1".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            proxy2.setPublickeyAuthenticator((u, k, s) -> "user2".equals(u) && KeyUtils.compareKeys(k, kp.getPublic()));
+            int[] forwarded = new int[2];
+            proxy1.setForwardingFilter(new StaticDecisionForwardingFilter(true) {
+
+                @Override
+                protected boolean checkAcceptance(String request, Session session, SshdSocketAddress target) {
+                    forwarded[0] = target.getPort();
+                    return super.checkAcceptance(request, session, target);
+                }
+            });
+            proxy2.setForwardingFilter(new StaticDecisionForwardingFilter(true) {
+
+                @Override
+                protected boolean checkAcceptance(String request, Session session, SshdSocketAddress target) {
+                    forwarded[1] = target.getPort();
+                    return super.checkAcceptance(request, session, target);
+                }
+            });
+            target.start();
+            proxy1.start();
+            proxy2.start();
+            // "Proxy3" should be ignored.
+            client.setHostConfigEntryResolver(HostConfigEntry.toHostConfigEntryResolver(
+                    Arrays.asList(new HostConfigEntry("target", "localhost", target.getPort(), "userT", "proxy2, proxy1"),
+                            new HostConfigEntry("proxy1", "localhost", proxy1.getPort(), "user1"),
+                            new HostConfigEntry("proxy2", "localhost", proxy2.getPort(), "user2", "proxy3"))));
+            client.start();
+            try (ClientSession session = client.connect("target").verify(CONNECT_TIMEOUT).getSession()) {
+                session.auth().verify(AUTH_TIMEOUT);
+
+                assertTrue(session.isOpen());
+                doTestCommand(session, "ls -la");
+            }
+            assertEquals(proxy2.getPort(), forwarded[0]);
+            assertEquals(target.getPort(), forwarded[1]);
+        }
+    }
+
+    @Test
+    @Disabled
+    void external() throws Exception {
         try (SshServer server = setupTestServer();
              SshServer proxy = setupTestServer()) {
 
@@ -247,7 +505,7 @@ public class ProxyTest extends BaseTestSupport {
         });
 
         server.start();
-        File knownHosts = tmpClientDir.newFile("knownhosts");
+        File knownHosts = File.createTempFile("knownhosts", null, tmpClientDir);
         writeKnownHosts(server, knownHosts);
         // setup proxy with a forwarding filter to allow the local port forwarding
         proxy.setForwardingFilter(AcceptAllForwardingFilter.INSTANCE);
