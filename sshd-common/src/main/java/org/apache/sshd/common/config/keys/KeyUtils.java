@@ -183,7 +183,9 @@ public final class KeyUtils {
         if (SecurityUtils.isECCSupported()) {
             registerPublicKeyEntryDecoder(ECDSAPublicKeyEntryDecoder.INSTANCE);
         }
-        KeyTypeSupport.providers().forEach(s -> KeyUtils.registerPublicKeyEntryDecoder(s.getPublicKeyEntryDecoder()));
+        if (SecurityUtils.isEDDSACurveSupported()) {
+            registerPublicKeyEntryDecoder(SecurityUtils.getEDDSAPublicKeyEntryDecoder());
+        }
 
         // order matters, these must be last since they register their PrivateKey type as java.security.PrivateKey
         // there is logical code which discovers a decoder type by instance assignability to this registered type

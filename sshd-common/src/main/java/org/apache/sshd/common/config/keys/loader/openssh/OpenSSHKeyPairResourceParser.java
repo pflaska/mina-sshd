@@ -49,7 +49,6 @@ import org.apache.sshd.common.cipher.BuiltinCiphers;
 import org.apache.sshd.common.cipher.CipherFactory;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.common.config.keys.KeyEntryResolver;
-import org.apache.sshd.common.config.keys.KeyTypeSupport;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.config.keys.PrivateKeyEntryDecoder;
 import org.apache.sshd.common.config.keys.PublicKeyEntryDecoder;
@@ -89,11 +88,13 @@ public class OpenSSHKeyPairResourceParser extends AbstractKeyPairResourceParser 
     static {
         registerPrivateKeyEntryDecoder(OpenSSHRSAPrivateKeyDecoder.INSTANCE);
         registerPrivateKeyEntryDecoder(OpenSSHDSSPrivateKeyEntryDecoder.INSTANCE);
+
         if (SecurityUtils.isECCSupported()) {
             registerPrivateKeyEntryDecoder(OpenSSHECDSAPrivateKeyEntryDecoder.INSTANCE);
         }
-        KeyTypeSupport.providers()
-                .forEach(s -> OpenSSHKeyPairResourceParser.registerPrivateKeyEntryDecoder(s.getPrivateKeyEntryDecoder()));
+        if (SecurityUtils.isEDDSACurveSupported()) {
+            registerPrivateKeyEntryDecoder(SecurityUtils.getOpenSSHEDDSAPrivateKeyEntryDecoder());
+        }
     }
 
     public OpenSSHKeyPairResourceParser() {
