@@ -81,7 +81,9 @@ import org.apache.sshd.common.util.security.bouncycastle.BouncyCastleEncryptedPr
 import org.apache.sshd.common.util.security.bouncycastle.BouncyCastleGeneratorHostKeyProvider;
 import org.apache.sshd.common.util.security.bouncycastle.BouncyCastleKeyPairResourceParser;
 import org.apache.sshd.common.util.security.bouncycastle.BouncyCastleRandomFactory;
+import org.apache.sshd.common.util.security.eddsa.EdDSASecurityProviderUtils;
 import org.apache.sshd.common.util.security.eddsa.generic.EdDSASupport;
+import org.apache.sshd.common.util.security.eddsa.jdk.JdkBuiltInEdDSASupport;
 import org.apache.sshd.common.util.threads.ThreadUtils;
 import org.apache.sshd.server.keyprovider.AbstractGeneratorHostKeyProvider;
 import org.slf4j.Logger;
@@ -642,6 +644,13 @@ public final class SecurityUtils {
                     return support;
                 }
             }
+
+            // try jdk
+            Service ed25519factory = Security.getProvider("SunEC").getService("KeyFactory", "Ed25519");
+            if (!Objects.isNull(ed25519factory)) {
+                return Optional.of(new JdkBuiltInEdDSASupport());
+            }
+
         }
         return Optional.empty();
     }
