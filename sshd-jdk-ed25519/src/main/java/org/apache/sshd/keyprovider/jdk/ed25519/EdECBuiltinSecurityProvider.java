@@ -31,19 +31,16 @@ import java.security.spec.EdECPoint;
 import java.security.spec.EdECPrivateKeySpec;
 import java.security.spec.EdECPublicKeySpec;
 import java.security.spec.NamedParameterSpec;
-import java.util.Collections;
-import java.util.Map;
 import java.util.Objects;
 
 import org.apache.sshd.common.config.keys.KeyTypeSupport;
 import org.apache.sshd.common.config.keys.PrivateKeyEntryDecoder;
 import org.apache.sshd.common.config.keys.PublicKeyEntryDecoder;
 import org.apache.sshd.common.keyprovider.KeyPairProvider;
-import org.apache.sshd.common.session.SessionContext;
-import org.apache.sshd.common.signature.AbstractSignature;
 import org.apache.sshd.common.signature.Signature;
 import org.apache.sshd.common.util.ValidateUtils;
 import org.apache.sshd.common.util.buffer.Buffer;
+import org.apache.sshd.common.util.security.eddsa.generic.GenericSignatureEd25519;
 
 /**
  *
@@ -107,15 +104,7 @@ public final class EdECBuiltinSecurityProvider implements KeyTypeSupport {
 
     @Override
     public Signature getSignature() {
-        // todo #pf: prototype only!
-        return new AbstractSignature("Ed25519") {
-            @Override
-            public boolean verify(SessionContext session, byte[] sig) throws Exception {
-                Map.Entry<String, byte[]> encoding = extractEncodedSignature(sig, Collections.singleton("ssh-ed25519"));
-
-                return doVerify(encoding.getValue());
-            }
-        };
+        return new GenericSignatureEd25519("Ed25519");
     }
 
     /**
