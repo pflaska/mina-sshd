@@ -55,6 +55,14 @@ public final class EdDSASecurityProviderUtils {
         throw new UnsupportedOperationException("No instance");
     }
 
+    public static Class<? extends PublicKey> getEDDSAPublicKeyType() {
+        return EdDSAPublicKey.class;
+    }
+
+    public static Class<? extends PrivateKey> getEDDSAPrivateKeyType() {
+        return EdDSAPrivateKey.class;
+    }
+
     public static boolean isEDDSAKey(Key key) {
         return getEDDSAKeySize(key) == KEY_SIZE;
     }

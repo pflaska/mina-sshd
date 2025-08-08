@@ -32,7 +32,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
+import java.security.Provider.Service;
 import java.security.PublicKey;
+import java.security.Security;
 import java.security.Signature;
 import java.security.cert.CertificateFactory;
 import java.util.Arrays;
@@ -60,6 +62,7 @@ import javax.crypto.spec.DHParameterSpec;
 import org.apache.sshd.common.NamedResource;
 import org.apache.sshd.common.PropertyResolverUtils;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
+import org.apache.sshd.common.config.keys.KeyTypeSupport;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.config.keys.PrivateKeyEntryDecoder;
 import org.apache.sshd.common.config.keys.PublicKeyEntryDecoder;
@@ -78,6 +81,7 @@ import org.apache.sshd.common.util.security.bouncycastle.BouncyCastleEncryptedPr
 import org.apache.sshd.common.util.security.bouncycastle.BouncyCastleGeneratorHostKeyProvider;
 import org.apache.sshd.common.util.security.bouncycastle.BouncyCastleKeyPairResourceParser;
 import org.apache.sshd.common.util.security.bouncycastle.BouncyCastleRandomFactory;
+import org.apache.sshd.common.util.security.eddsa.EdDSASecurityProviderUtils;
 import org.apache.sshd.common.util.security.eddsa.generic.EdDSASupport;
 import org.apache.sshd.common.util.threads.ThreadUtils;
 import org.apache.sshd.server.keyprovider.AbstractGeneratorHostKeyProvider;
@@ -284,7 +288,7 @@ public final class SecurityUtils {
                 try {
                     getKeyPairGenerator(KeyUtils.EC_ALGORITHM);
                     hasEcc = Boolean.TRUE;
-                } catch (Throwable t) {
+                } catch (GeneralSecurityException t) {
                     hasEcc = Boolean.FALSE;
                 }
             } else {
@@ -643,6 +647,11 @@ public final class SecurityUtils {
         return Optional.empty();
     }
 
+    public static boolean isEdEcJdkAvailable() {
+        Service ed25519factory = Security.getProvider("SunEC").getService("KeyFactory", "Ed25519");
+        return ed25519factory != null;
+    }
+
     /* -------------------------------------------------------------------- */
 
     public static PublicKeyEntryDecoder<? extends PublicKey, ? extends PrivateKey> getEDDSAPublicKeyEntryDecoder() {
@@ -668,7 +677,30 @@ public final class SecurityUtils {
         if (support.isPresent()) {
             return support.get().getEDDSASigner();
         }
+        throw new UnsupportedOperationException(EDDSA + " Signer not available");
+    }
 
+    public static PublicKeyEntryDecoder<? extends PublicKey, ? extends PrivateKey> getEDDSAPublicKeyEntryDecoderJdk15() {
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return gen.getPublicKeyEntryDecoder();
+        }
+        throw new UnsupportedOperationException(EDDSA + " provider N/A");
+    }
+
+    public static PrivateKeyEntryDecoder<? extends PublicKey, ? extends PrivateKey> getOpenSSHEDDSAPrivateKeyEntryDecoderJdk15() {
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return gen.getPrivateKeyEntryDecoder();
+        }
+        throw new UnsupportedOperationException(EDDSA + " provider N/A");
+    }
+
+    public static org.apache.sshd.common.signature.Signature getEDDSASignerJdk15() {
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return gen.getSignature();
+        }
         throw new UnsupportedOperationException(EDDSA + " Signer not available");
     }
 
@@ -696,6 +728,24 @@ public final class SecurityUtils {
     public static boolean compareEDDSAPPublicKeys(PublicKey k1, PublicKey k2) {
         Optional<EdDSASupport<?, ?>> support = getEdDSASupport();
         return support.map(edDSASupport -> edDSASupport.compareEDDSAPPublicKeys(k1, k2)).orElse(false);
+    }
+
+    public static Class<? extends PublicKey> getEDDSAPublicKeyTypeJdk15() {
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        return gen != null ? gen.getEDDSAPublicKeyType() : PublicKey.class;
+    }
+
+    public static Class<? extends PrivateKey> getEDDSAPrivateKeyTypeJdk15() {
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        return gen != null ? gen.getEDDSAPrivateKeyType() : PrivateKey.class;
+    }
+
+    public static boolean compareEDDSAPPublicKeysJdk15(PublicKey k1, PublicKey k2) {
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return Objects.equals(k1, k2);
+        }
+        return isEDDSACurveSupported() ? EdDSASecurityProviderUtils.compareEDDSAPPublicKeys(k1, k2) : false;
     }
 
     public static boolean compareEDDSAPrivateKeys(PrivateKey k1, PrivateKey k2) {
@@ -745,6 +795,25 @@ public final class SecurityUtils {
         }
 
         return support.get().putRawEDDSAPublicKey(buffer, key);
+    }
+
+    public static PublicKey generateEDDSAPublicKeyJdk15(String keyType, byte[] seed) throws GeneralSecurityException {
+        if (!KeyPairProvider.SSH_ED25519.equals(keyType)) {
+            throw new InvalidKeyException("Unsupported key type: " + keyType);
+        }
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return gen.generatePublicKey(seed);
+        }
+        throw new NoSuchAlgorithmException(EDDSA + " provider not supported");
+    }
+
+    public static <B extends Buffer> B putRawEDDSAPublicKeyJdk15(B buffer, PublicKey key) {
+        KeyTypeSupport gen = KeyTypeSupport.getProvider(KeyPairProvider.SSH_ED25519);
+        if (gen != null) {
+            return (B) gen.putRawPublicKey(buffer, key);
+        }
+        throw new UnsupportedOperationException(EDDSA + " provider not supported");
     }
 
     public static <B extends Buffer> B putEDDSAKeyPair(B buffer, KeyPair kp) {
