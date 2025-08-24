@@ -82,7 +82,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.build.outputTimestamp>2025-08-17T20:59:29Z</project.build.outputTimestamp>
 
-        <java.sdk.version>17</java.sdk.version>
+        <java.sdk.version>8</java.sdk.version>
         <javac.source>${java.sdk.version}</javac.source>
         <project.build.java.source>${javac.source}</project.build.java.source>
         <maven.compiler.source>${javac.source}</maven.compiler.source>
@@ -1327,6 +1327,6 @@
         <module>sshd-cli</module>
         <module>sshd-osgi</module>
         <module>assembly</module>
-	<module>sshd-jdk-ed25519</module>
+        <module>sshd-jdk-ed25519</module>
     </modules>
 </project>
