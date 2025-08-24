@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.sshd.common.util.security.eddsa.jdk;
+package org.apache.sshd.keyprovider.jdk.ed25519;
 
 import java.io.IOException;
 import java.math.BigInteger;
