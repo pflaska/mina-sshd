@@ -29,7 +29,13 @@
 
 ## Bug Fixes
 
+* [GH-807](https://github.com/apache/mina-sshd/issues/807) Handle "verified" flag for sk-* keys
+* [GH-809](https://github.com/apache/mina-sshd/pull/809) Fix server-side authentication for FIDO/U2F sk-* keys with flags in `authorized_keys`
+
 ## New Features
+
+* [GH-814](https://github.com/apache/mina-sshd/pull/814) Include a fix for CVE-2020-36843 in optional dependency net.i2p.crypto:eddsa:0.3.0: perform the missing range check in Apache MINA SSHD before delegating to the signature verification in net.i2p.crypto:eddsa:0.3.0. This means that using net.i2p.crypto:eddsa:0.3.0 in Apache MINA SSHD is
+safe despite that CVE in the dependency.
 
 ## Potential Compatibility Issues
 

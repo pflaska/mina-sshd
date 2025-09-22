@@ -139,7 +139,8 @@ public final class SecurityUtils {
             Arrays.asList(
                     "org.apache.sshd.common.util.security.SunJCESecurityProviderRegistrar",
                     "org.apache.sshd.common.util.security.bouncycastle.BouncyCastleSecurityProviderRegistrar",
-                    "org.apache.sshd.common.util.security.eddsa.EdDSASecurityProviderRegistrar"));
+                    "org.apache.sshd.common.util.security.eddsa.EdDSASecurityProviderRegistrar",
+                    "org.apache.sshd.common.util.security.eddsa.JdkBuiltInSunECProviderRegistrar"));
 
     /**
      * System property used to control whether to automatically register the {@code Bouncyastle} JCE provider

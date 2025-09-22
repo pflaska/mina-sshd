@@ -25,6 +25,7 @@ import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.config.keys.impl.SkED25519PublicKeyEntryDecoder;
 import org.apache.sshd.common.keyprovider.KeyPairProvider;
 import org.apache.sshd.common.util.ValidateUtils;
+import org.apache.sshd.common.util.security.SecurityUtils;
 
 public class SkED25519PublicKey implements SecurityKeyPublicKey<PublicKey> {
 
@@ -34,11 +35,26 @@ public class SkED25519PublicKey implements SecurityKeyPublicKey<PublicKey> {
 
     private final String appName;
     private final boolean noTouchRequired;
+    private final boolean verifyRequired;
     private final PublicKey delegatePublicKey;
 
+    /**
+     * Creates a new instance.
+     *
+     * @param      appName           application name
+     * @param      noTouchRequired   whether the "no-touch-required" flag was present in authorized_keys
+     * @param      delegatePublicKey the underlying real public key
+     * @deprecated                   use {@link #SkED25519PublicKey(String, boolean, boolean, PublicKey)} instead
+     */
+    @Deprecated
     public SkED25519PublicKey(String appName, boolean noTouchRequired, PublicKey delegatePublicKey) {
+        this(appName, noTouchRequired, false, delegatePublicKey);
+    }
+
+    public SkED25519PublicKey(String appName, boolean noTouchRequired, boolean verifyRequired, PublicKey delegatePublicKey) {
         this.appName = appName;
         this.noTouchRequired = noTouchRequired;
+        this.verifyRequired = verifyRequired;
         ValidateUtils.checkTrue(KeyPairProvider.SSH_ED25519.equals(KeyUtils.getKeyType(delegatePublicKey)),
                 "Key is not an ed25519 key");
         this.delegatePublicKey = delegatePublicKey;
@@ -75,6 +91,11 @@ public class SkED25519PublicKey implements SecurityKeyPublicKey<PublicKey> {
     }
 
     @Override
+    public boolean isVerifyRequired() {
+        return verifyRequired;
+    }
+
+    @Override
     public PublicKey getDelegatePublicKey() {
         return delegatePublicKey;
     }
@@ -84,13 +105,14 @@ public class SkED25519PublicKey implements SecurityKeyPublicKey<PublicKey> {
         return getClass().getSimpleName()
                + "[appName=" + getAppName()
                + ", noTouchRequired=" + isNoTouchRequired()
+               + ", verifyRequired=" + isVerifyRequired()
                + ", delegatePublicKey=" + getDelegatePublicKey()
                + "]";
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(appName, noTouchRequired, delegatePublicKey);
+        return Objects.hash(appName, noTouchRequired, verifyRequired, delegatePublicKey);
     }
 
     @Override
@@ -108,7 +130,8 @@ public class SkED25519PublicKey implements SecurityKeyPublicKey<PublicKey> {
         SkED25519PublicKey other = (SkED25519PublicKey) obj;
         return Objects.equals(this.appName, other.appName)
                 && this.noTouchRequired == other.noTouchRequired
-                && Objects.equals(this.delegatePublicKey, other.delegatePublicKey);
+                && this.verifyRequired == other.verifyRequired
+                && SecurityUtils.compareEDDSAPPublicKeys(this.delegatePublicKey, other.delegatePublicKey);
     }
 
 }

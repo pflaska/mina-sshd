@@ -193,6 +193,7 @@ public final class KeyUtils {
         if (SecurityUtils.isECCSupported()) {
             registerPublicKeyEntryDecoder(SkECDSAPublicKeyEntryDecoder.INSTANCE);
         }
+        // TODO PF: This should be supported even with JDK-ed25519
         if (SecurityUtils.isEDDSACurveSupported()) {
             registerPublicKeyEntryDecoder(SkED25519PublicKeyEntryDecoder.INSTANCE);
         }
@@ -1254,27 +1255,11 @@ public final class KeyUtils {
     }
 
     public static boolean compareSkEcdsaKeys(SkEcdsaPublicKey k1, SkEcdsaPublicKey k2) {
-        if (Objects.equals(k1, k2)) {
-            return true;
-        } else if (k1 == null || k2 == null) {
-            return false; // both null is covered by Objects#equals
-        } else {
-            return Objects.equals(k1.getAppName(), k2.getAppName())
-                    && Objects.equals(k1.isNoTouchRequired(), k2.isNoTouchRequired())
-                    && compareECKeys(k1.getDelegatePublicKey(), k2.getDelegatePublicKey());
-        }
+        return Objects.equals(k1, k2);
     }
 
     public static boolean compareSkEd25519Keys(SkED25519PublicKey k1, SkED25519PublicKey k2) {
-        if (Objects.equals(k1, k2)) {
-            return true;
-        } else if (k1 == null || k2 == null) {
-            return false; // both null is covered by Objects#equals
-        } else {
-            return Objects.equals(k1.getAppName(), k2.getAppName())
-                    && Objects.equals(k1.isNoTouchRequired(), k2.isNoTouchRequired())
-                    && SecurityUtils.compareEDDSAPPublicKeys(k1.getDelegatePublicKey(), k2.getDelegatePublicKey());
-        }
+        return Objects.equals(k1, k2);
     }
 
     public static String getSignatureAlgorithm(String chosenAlgorithm, PublicKey key) {
